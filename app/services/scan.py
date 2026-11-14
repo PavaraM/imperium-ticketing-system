@@ -1,0 +1,120 @@
+"""Door scanning: read-only lookup, name search, and the single atomic check-in."""
+
+import re
+from dataclasses import dataclass
+from datetime import datetime
+from urllib.parse import parse_qs, unquote, urlparse
+
+from sqlalchemy import func, update
+from sqlmodel import Session, select
+
+from app.models import Ticket, TicketStatus, User, utcnow
+
+# Generated tokens are urlsafe base64; validating the shape keeps junk input away
+# from the database without leaking whether a real token exists.
+TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
+MAX_SEARCH_RESULTS = 8
+
+
+@dataclass(slots=True)
+class ScanTicket:
+    """The only guest data the door needs. Never carries a token."""
+
+    ticket_id: int
+    name: str
+    batch: str | None
+    status: TicketStatus
+    checked_in_at: datetime | None
+    checked_in_by: str | None
+
+
+def normalize_scan_payload(raw: str) -> str:
+    """Return the token from a bare token or a URL that carries one."""
+    value = raw.strip().strip("\"'").strip()
+    if not value:
+        return ""
+    if "://" in value:
+        parsed = urlparse(value)
+        segments = [unquote(part) for part in parsed.path.split("/") if part]
+        if segments:
+            value = segments[-1]
+        else:
+            query = parse_qs(parsed.query)
+            value = (query.get("t") or query.get("token") or [""])[0]
+    return value.strip()
+
+
+def _snapshot(session: Session, ticket: Ticket) -> ScanTicket:
+    checker = session.get(User, ticket.checked_in_by) if ticket.checked_in_by else None
+    return ScanTicket(
+        ticket_id=ticket.id or 0,
+        name=ticket.name,
+        batch=ticket.batch or None,
+        status=ticket.status,
+        checked_in_at=ticket.checked_in_at,
+        checked_in_by=checker.username if checker else None,
+    )
+
+
+def _find(session: Session, *, token: str = "", ticket_id: int | None = None) -> Ticket | None:
+    if ticket_id is not None:
+        return session.get(Ticket, ticket_id)
+    candidate = normalize_scan_payload(token)
+    if not TOKEN_RE.match(candidate):
+        return None
+    return session.exec(select(Ticket).where(Ticket.token == candidate)).first()
+
+
+def resolve(
+    session: Session, *, token: str = "", ticket_id: int | None = None
+) -> ScanTicket | None:
+    """Read-only lookup. Never changes ticket state."""
+    ticket = _find(session, token=token, ticket_id=ticket_id)
+    return _snapshot(session, ticket) if ticket else None
+
+
+def check_in(
+    session: Session, actor: User, *, token: str = "", ticket_id: int | None = None
+) -> tuple[ScanTicket | None, bool]:
+    """Admit a ticket in one atomic statement.
+
+    Returns ``(snapshot, admitted)``. ``admitted`` is False when the row was not
+    ``valid`` at the moment the UPDATE ran, so two phones can never both win.
+    """
+    conditions = [Ticket.status == TicketStatus.valid]
+    if ticket_id is not None:
+        conditions.append(Ticket.id == ticket_id)
+    else:
+        candidate = normalize_scan_payload(token)
+        if not TOKEN_RE.match(candidate):
+            return None, False
+        conditions.append(Ticket.token == candidate)
+
+    result = session.execute(
+        update(Ticket)
+        .where(*conditions)
+        .values(
+            status=TicketStatus.checked_in,
+            checked_in_at=utcnow(),
+            checked_in_by=actor.id,
+        )
+    )
+    admitted = result.rowcount == 1
+    session.commit()
+
+    snapshot = resolve(session, token=token, ticket_id=ticket_id)
+    return snapshot, admitted
+
+
+def search_by_name(session: Session, query: str, *, limit: int = MAX_SEARCH_RESULTS):
+    """Manual fallback when a QR will not scan. Returns snapshots, never tokens."""
+    needle = query.strip().lower()
+    if not needle:
+        return []
+    statement = (
+        select(Ticket)
+        .where(func.lower(Ticket.name).contains(needle, autoescape=True))
+        .order_by(Ticket.name)
+        .limit(limit)
+    )
+    return [_snapshot(session, ticket) for ticket in session.exec(statement)]

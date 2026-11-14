@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Scanner · {{ event_name }}{% endblock %}
+{% block content %}
+<h1>Door scanner</h1>
+<p class="lede">Point the rear camera at a guest’s QR. Nothing is admitted until you tap Let in.</p>
+
+<section class="panel scan-shell">
+  <div id="reader" class="reader"></div>
+  <p id="camera-status" class="muted" role="status">Starting camera…</p>
+  <button id="camera-toggle" type="button" class="button button-quiet" hidden>Stop camera</button>
+</section>
+
+<section id="result" class="scan-result" hidden aria-live="assertive">
+  <p id="result-kicker" class="scan-kicker"></p>
+  <h2 id="result-name"></h2>
+  <p id="result-batch" class="scan-meta"></p>
+  <p id="result-note" class="scan-note"></p>
+  <div class="scan-actions">
+    <button id="admit" type="button" class="button" hidden>Let in</button>
+    <button id="dismiss" type="button" class="button button-quiet">Scan next</button>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Manual search</h2>
+  <p class="muted">Use this if a QR won’t scan. Search the guest’s name, then pick them from the list.</p>
+  <form id="search-form" class="toolbar">
+    <label class="visually-hidden" for="search-input">Guest name</label>
+    <input
+      id="search-input"
+      name="q"
+      type="search"
+      placeholder="Guest name"
+      autocomplete="off"
+      maxlength="120"
+      required
+    >
+    <button id="search-submit" type="submit" class="button button-quiet">Search</button>
+  </form>
+  <p id="search-status" class="muted" role="status"></p>
+  <ul id="search-results" class="rows"></ul>
+</section>
+
+<script src="/static/vendor/html5-qrcode.min.js"></script>
+<script src="/static/scan.js"></script>
+{% endblock %}

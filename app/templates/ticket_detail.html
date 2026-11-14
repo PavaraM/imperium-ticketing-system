@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}{{ ticket.name }} · {{ event_name }}{% endblock %}
+
+{% block content %}
+  <p class="crumb"><a href="/tickets">← All tickets</a></p>
+
+  <div class="page-head">
+    <div>
+      <h1>{{ ticket.name }}</h1>
+      <p class="muted">Ticket #{{ ticket.id }}</p>
+    </div>
+    <span class="badge badge-{{ ticket.status.value }}">
+      {{ ticket.status.value | replace("_", " ") }}
+    </span>
+  </div>
+
+  <div class="detail-grid">
+    <section class="panel">
+      <h2>Guest details</h2>
+      <dl class="facts">
+        <div class="fact">
+          <dt>Email</dt>
+          <dd>{{ ticket.email }}</dd>
+        </div>
+        <div class="fact">
+          <dt>WhatsApp</dt>
+          <dd>{{ ticket.whatsapp_number }}</dd>
+        </div>
+        <div class="fact">
+          <dt>Batch</dt>
+          <dd>{{ ticket.batch or "—" }}</dd>
+        </div>
+        <div class="fact">
+          <dt>Paid</dt>
+          <dd>{{ currency }} {{ ticket.amount_paid | money }}</dd>
+        </div>
+        <div class="fact">
+          <dt>Bank reference</dt>
+          <dd><code>{{ ticket.bank_reference }}</code></dd>
+        </div>
+        <div class="fact">
+          <dt>Issued by</dt>
+          <dd>{{ issuer.username if issuer else "—" }}</dd>
+        </div>
+        <div class="fact">
+          <dt>Created</dt>
+          <dd>{{ ticket.created_at | local_time(event_tz) }}</dd>
+        </div>
+        <div class="fact">
+          <dt>Email</dt>
+          <dd>
+            <span class="badge badge-email-{{ ticket.email_status.value }}">
+              {{ ticket.email_status.value }}
+            </span>
+          </dd>
+        </div>
+        {% if ticket.checked_in_at %}
+          <div class="fact">
+            <dt>Admitted</dt>
+            <dd>{{ ticket.checked_in_at | local_time(event_tz) }}</dd>
+          </div>
+          <div class="fact">
+            <dt>Admitted by</dt>
+            <dd>{{ checker.username if checker else "—" }}</dd>
+          </div>
+        {% endif %}
+      </dl>
+    </section>
+
+    <section class="panel qr-panel">
+      <h2>Entry QR</h2>
+      <img src="/tickets/{{ ticket.id }}/qr.png" width="240" height="240"
+           alt="QR code for ticket {{ ticket.id }}">
+      <p class="muted">Only the ticket token is encoded — no personal details.</p>
+      <form method="post" action="/tickets/{{ ticket.id }}/resend">
+        <button type="submit" class="button button-quiet">Resend email</button>
+      </form>
+      {% if user.role.value == "admin" and ticket.status.value == "valid" %}
+        <form method="post" action="/tickets/{{ ticket.id }}/revoke" class="revoke-form">
+          <button type="submit" class="button button-danger">Revoke ticket</button>
+        </form>
+        <p class="muted">Revoking keeps the record and blocks entry at the door.</p>
+      {% elif ticket.status.value == "revoked" %}
+        <p class="muted">This ticket is revoked. Its QR is refused at the door.</p>
+      {% endif %}
+    </section>
+  </div>
+{% endblock %}

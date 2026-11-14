@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Staff accounts · {{ event_name }}{% endblock %}
+
+{% block content %}
+  <h1 class="display">Staff accounts</h1>
+  <p class="lede">One admin. Ticketers issue tickets and run the scanner.</p>
+
+  <section class="panel">
+    <h2>Add a ticketer</h2>
+
+    {% if error %}
+      <p class="alert" role="alert">{{ error }}</p>
+    {% endif %}
+
+    <form method="post" action="/admin/users" class="stack">
+      <label>
+        Username
+        <input name="username" value="{{ form_username or '' }}" required
+               autocapitalize="none" spellcheck="false" minlength="3" maxlength="32"
+               pattern="[A-Za-z0-9_.\-]+">
+      </label>
+      <label>
+        Password
+        <input type="password" name="password" required minlength="8"
+               autocomplete="new-password">
+      </label>
+      <button type="submit" class="button">Create ticketer</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Everyone with access</h2>
+    <ul class="people">
+      {% for account in users %}
+        <li class="person">
+          <div class="person-id">
+            <span class="person-name">{{ account.username }}</span>
+            <span class="badge badge-{{ account.role.value }}">
+              {{ "Event admin" if account.role.value == "admin" else account.role.value }}
+            </span>
+          </div>
+          <div class="person-actions">
+            {% if account.role.value == "admin" %}
+              <span class="muted">Always active</span>
+            {% else %}
+              <span class="state {{ 'state-off' if not account.is_active else '' }}">
+                {{ "Disabled" if not account.is_active else "Active" }}
+              </span>
+              <form method="post" action="/admin/users/{{ account.id }}/toggle">
+                <button type="submit" class="button button-quiet">
+                  {{ "Re-enable" if not account.is_active else "Disable" }}
+                </button>
+              </form>
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>Reset database</h2>
+    <p class="alert" role="alert">
+      This permanently deletes records. A backup is always created first.
+      The admin account and password are retained.
+    </p>
+    <form method="post" action="/admin/reset" class="stack">
+      <label for="reset-scope">What should be reset?
+        <select id="reset-scope" name="scope" required>
+          <option value="tickets-only">Tickets only (keep all staff accounts)</option>
+          <option value="full">Tickets and ticketers (keep the admin account)</option>
+        </select>
+      </label>
+      <label for="reset-confirmation">Type RESET to confirm
+        <input id="reset-confirmation" name="confirmation" required pattern="RESET"
+               autocomplete="off">
+      </label>
+      <button type="submit" class="button button-danger">Create backup and reset</button>
+    </form>
+  </section>
+{% endblock %}

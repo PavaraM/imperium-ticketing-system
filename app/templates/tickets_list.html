@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Tickets · {{ event_name }}{% endblock %}
+
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Tickets</h1>
+      <p class="muted">
+        {{ tickets | length }} ticket{% if tickets | length != 1 %}s{% endif %}{% if q %}
+          matching “{{ q }}”{% endif %}{% if email %} with email {{ email }}{% endif %}
+      </p>
+    </div>
+    <div class="page-actions">
+      {% if user.role.value == "admin" %}
+        <a class="button button-quiet" href="/tickets/export.csv">Export CSV</a>
+      {% endif %}
+      <a class="button" href="/tickets/new">New ticket</a>
+    </div>
+  </div>
+
+  {% if email %}
+    <p class="alert">
+      Showing only tickets whose email is {{ email }}.
+      <a href="/tickets">Show all</a>.
+    </p>
+  {% endif %}
+
+  <form class="toolbar" method="get" action="/tickets" role="search">
+    <label class="sr-only" for="q">Search tickets</label>
+    <input id="q" name="q" value="{{ q }}" placeholder="Name, email, phone or bank reference"
+           inputmode="search" autocomplete="off">
+    {% if email %}<input type="hidden" name="email" value="{{ email }}">{% endif %}
+    <button type="submit" class="button button-quiet">Search</button>
+  </form>
+
+  {% if tickets %}
+    <ul class="rows">
+      {% for ticket in tickets %}
+        <li class="ticket">
+          <a class="ticket-link" href="/tickets/{{ ticket.id }}">
+            <span class="ticket-main">
+              <span class="ticket-name">{{ ticket.name }}</span>
+              <span class="ticket-meta">
+                {{ ticket.batch or "No batch" }} · {{ currency }} {{ ticket.amount_paid | money }}
+              </span>
+            </span>
+            <span class="badge badge-{{ ticket.status.value }}">
+              {{ ticket.status.value | replace("_", " ") }}
+            </span>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty">
+      {% if q %}
+        Nothing matches “{{ q }}”. <a href="/tickets">Clear the search</a>.
+      {% else %}
+        No tickets yet. <a href="/tickets/new">Issue the first one</a>.
+      {% endif %}
+    </p>
+  {% endif %}
+{% endblock %}

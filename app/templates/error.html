@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} · {{ event_name }}{% endblock %}
+
+{% block content %}
+  <section class="panel panel-narrow">
+    <h1 class="display">{{ title }}</h1>
+    <p class="lede">{{ message }}</p>
+    <p><a class="button" href="/">Back to dashboard</a></p>
+  </section>
+{% endblock %}

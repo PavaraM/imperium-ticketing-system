@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard · {{ event_name }}{% endblock %}
+
+{% block content %}
+  <h1 class="display">Event dashboard</h1>
+  <p class="lede">{{ event_name }}{% if event_date %} · {{ event_date }}{% endif %}{% if event_venue %} · {{ event_venue }}{% endif %}</p>
+
+  <dl class="stats">
+    <div class="stat">
+      <dt>Tickets sold</dt>
+      <dd>{{ totals.sold }}</dd>
+    </div>
+    <div class="stat">
+      <dt>Checked in</dt>
+      <dd>{{ totals.admitted }}</dd>
+    </div>
+    <div class="stat">
+      <dt>Collected</dt>
+      <dd class="stat-money">{{ currency }} {{ totals.revenue | money }}</dd>
+    </div>
+    <div class="stat">
+      <dt>Ticketers</dt>
+      <dd>{{ totals.ticketers }}</dd>
+    </div>
+  </dl>
+
+  {% if totals.failed_emails %}
+    <p class="alert">
+      {{ totals.failed_emails }} ticket{% if totals.failed_emails != 1 %}s{% endif %}
+      could not be emailed.
+      <a href="/tickets?email=failed">Open them and resend</a>.
+    </p>
+  {% endif %}
+
+  <section class="panel">
+    <h2>Sales by staff</h2>
+    <div class="table-wrap" role="region" aria-label="Sales by staff" tabindex="0">
+      <table class="table">
+        <thead>
+          <tr>
+            <th scope="col">Staff</th>
+            <th scope="col" class="num">Issued</th>
+            <th scope="col" class="num">Admitted</th>
+            <th scope="col" class="num">Collected</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in sales %}
+            <tr>
+              <td>
+                {{ row.username }}
+                {% if row.role.value == "admin" %}<span class="badge">admin</span>{% endif %}
+              </td>
+              <td class="num">{{ row.issued }}</td>
+              <td class="num">{{ row.admitted }}</td>
+              <td class="num">{{ currency }} {{ row.revenue | money }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">Revoked tickets are left out of these totals.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Latest admissions</h2>
+    {% if admissions %}
+      <ul class="rows">
+        {% for entry in admissions %}
+          <li class="ticket">
+            <a class="ticket-link" href="/tickets/{{ entry.ticket_id }}">
+              <span class="ticket-main">
+                <span class="ticket-name">{{ entry.name }}</span>
+                <span class="ticket-meta">
+                  {% if entry.batch %}{{ entry.batch }} · {% endif %}{{ entry.by }}
+                </span>
+              </span>
+              <span class="ticket-side">{{ entry.checked_in_at | local_clock(event_tz) }}</span>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty">Nobody has been admitted yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Start here</h2>
+    <ul class="plain">
+      <li><a href="/tickets/new">Issue a ticket</a> for a guest who has paid by bank transfer.</li>
+      <li><a href="/tickets">Search tickets</a> to resend an email or check a guest’s details.</li>
+      <li><a href="/scan">Open the scanner</a> at the door and admit guests one at a time.</li>
+      <li><a href="/admin/users">Manage ticketer accounts</a>.</li>
+    </ul>
+  </section>
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}New ticket · {{ event_name }}{% endblock %}
+
+{% block content %}
+  <p class="crumb"><a href="/tickets">← All tickets</a></p>
+  <h1>New ticket</h1>
+  <p class="lede">Only for a guest who has already paid by bank transfer.</p>
+
+  {% if errors %}
+    <div class="alert" role="alert">
+      <ul class="errors">
+        {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form method="post" action="/tickets" class="panel panel-narrow stack" autocomplete="off">
+    <label for="name">Guest name
+      <input id="name" name="name" value="{{ form.get('name', '') }}" required
+             minlength="2" maxlength="120" autocomplete="name">
+    </label>
+
+    <label for="email">Email
+      <input id="email" name="email" type="email" value="{{ form.get('email', '') }}"
+             required maxlength="254" autocomplete="email" inputmode="email">
+    </label>
+
+    <label for="whatsapp_number">WhatsApp number
+      <input id="whatsapp_number" name="whatsapp_number" type="tel"
+             value="{{ form.get('whatsapp_number', '') }}" required maxlength="32"
+             autocomplete="tel" inputmode="tel" placeholder="0771234567">
+    </label>
+
+    <label for="batch">Batch <span class="muted">(optional)</span>
+      <input id="batch" name="batch" value="{{ form.get('batch', '') }}" maxlength="60"
+             placeholder="e.g. 2026 A/L Commerce">
+    </label>
+
+    <label for="amount">Amount paid ({{ currency }})
+      <input id="amount" name="amount" value="{{ form.get('amount', '') }}" required
+             inputmode="decimal" placeholder="e.g. 1500">
+    </label>
+
+    <label for="bank_reference">Bank reference
+      <input id="bank_reference" name="bank_reference" value="{{ form.get('bank_reference', '') }}"
+             required minlength="3" maxlength="80" placeholder="Reference on the transfer">
+    </label>
+
+    <button type="submit" class="button">Create ticket and email QR</button>
+  </form>
+{% endblock %}
