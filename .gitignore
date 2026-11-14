@@ -1,0 +1,37 @@
+skills/
+AGENT.md
+PARTY_TICKETING_PLAN.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.tox/
+.nox/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+build/
+dist/
+*.egg-info/
+
+# Local config and data
+.env
+.env.*
+!.env.example
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+var/
+
+# Local tool artifacts
+.playwright-mcp/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
