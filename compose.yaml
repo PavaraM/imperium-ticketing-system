@@ -1,0 +1,30 @@
+volumes:
+  ticketing-data:
+  caddy_data:
+  caddy_config:
+
+services:
+  app:
+    build: .
+    env_file: .env
+    environment:
+      COOKIE_SECURE: "true"
+      TRUST_PROXY: "true"
+      #BASE_URL: "https://<your hostname>"
+    volumes:
+      - ticketing-data:/app/var
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - 80:80
+      - 443:443
+      - 443:443/udp
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
