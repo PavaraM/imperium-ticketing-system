@@ -3,8 +3,9 @@
 from fastapi.testclient import TestClient
 
 from app.models import Ticket, TicketStatus
-from tests.conftest import ADMIN_USERNAME
-from tests.helpers import fresh, issue_ticket
+from app.services.users import create_ticketer
+from tests.conftest import ADMIN_PASSWORD, ADMIN_USERNAME, login
+from tests.helpers import fresh, issue_ticket, issue_ticket_as
 
 
 def _check_in(client: TestClient, ticket_id: int):
@@ -60,18 +61,47 @@ def test_admin_navigation_marks_current_page(admin_client):
 def test_ticketer_navigation_is_limited_and_marks_current_page(ticketer_client):
     ticketer_page = ticketer_client.get("/tickets")
 
-    assert ticketer_page.text.count('class="nav-icon"') == 2
+    assert ticketer_page.text.count('class="nav-icon"') == 3
     assert ticketer_page.text.count('aria-current="page"') == 1
-    assert "Dashboard" not in ticketer_page.text
+    assert "Dashboard" in ticketer_page.text
     assert "Staff" not in ticketer_page.text
 
 
-def test_ticketer_is_redirected_to_tickets(ticketer_client):
-    response = ticketer_client.get("/", follow_redirects=False)
+def test_ticketer_dashboard_uses_only_own_ticket_stats(ticketer_client, session):
+    own_ticket = issue_ticket(
+        ticketer_client,
+        session,
+        name="Ticketer Dashboard Guest",
+        reference="DASH-TICKETER-001",
+    )
+    other_user = create_ticketer(session, "ticketer2", "ticketer2-pass-123")
+    assert other_user.id is not None
+    other_ticket = issue_ticket_as(
+        session,
+        other_user.id,
+        name="Other Dashboard Guest",
+        email="other-dashboard@example.com",
+        reference="DASH-TICKETER-002",
+    )
+    assert _check_in(ticketer_client, own_ticket.id).status_code == 200
+    assert _check_in(ticketer_client, other_ticket.id).status_code == 200
 
-    assert response.status_code == 303
-    assert response.headers["location"] == "/tickets"
-    assert "Dashboard" not in ticketer_client.get("/tickets").text
+    ticketer_dashboard = ticketer_client.get("/")
+    assert ticketer_dashboard.status_code == 200
+    assert "Tickets sold" in ticketer_dashboard.text
+    assert "1,500.00" in ticketer_dashboard.text
+    assert "Ticketer Dashboard Guest" in ticketer_dashboard.text
+    assert "Other Dashboard Guest" not in ticketer_dashboard.text
+    assert "Ticketers" not in ticketer_dashboard.text
+    assert "ticketer2" not in ticketer_dashboard.text
+
+    ticketer_client.post("/logout", follow_redirects=False)
+    assert login(ticketer_client, ADMIN_USERNAME, ADMIN_PASSWORD).status_code == 303
+    admin_dashboard = ticketer_client.get("/")
+    assert admin_dashboard.status_code == 200
+    assert "3,000.00" in admin_dashboard.text
+    assert "Ticketer Dashboard Guest" in admin_dashboard.text
+    assert "Other Dashboard Guest" in admin_dashboard.text
 
 
 def test_admin_revokes_ticket_and_scanner_refuses_it(admin_client, session):

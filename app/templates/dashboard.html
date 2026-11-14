@@ -19,10 +19,12 @@
       <dt>Collected</dt>
       <dd class="stat-money">{{ currency }} {{ totals.revenue | money }}</dd>
     </div>
-    <div class="stat">
-      <dt>Ticketers</dt>
-      <dd>{{ totals.ticketers }}</dd>
-    </div>
+    {% if user.role.value == "admin" %}
+      <div class="stat">
+        <dt>Ticketers</dt>
+        <dd>{{ totals.ticketers }}</dd>
+      </div>
+    {% endif %}
   </dl>
 
   {% if totals.failed_emails %}
@@ -92,7 +94,9 @@
       <li><a href="/tickets/new">Issue a ticket</a> for a guest who has paid by bank transfer.</li>
       <li><a href="/tickets">Search tickets</a> to resend an email or check a guest’s details.</li>
       <li><a href="/scan">Open the scanner</a> at the door and admit guests one at a time.</li>
-      <li><a href="/admin/users">Manage ticketer accounts</a>.</li>
+      {% if user.role.value == "admin" %}
+        <li><a href="/admin/users">Manage ticketer accounts</a>.</li>
+      {% endif %}
     </ul>
   </section>
 {% endblock %}

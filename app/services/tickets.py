@@ -199,9 +199,12 @@ def search_tickets(
     query: str = "",
     *,
     email_status: EmailStatus | None = None,
+    issued_by: int | None = None,
     limit: int = 500,
 ) -> list[Ticket]:
     statement = select(Ticket)
+    if issued_by is not None:
+        statement = statement.where(Ticket.issued_by == issued_by)
     term = query.strip()
     if term:
         pattern = f"%{term}%"

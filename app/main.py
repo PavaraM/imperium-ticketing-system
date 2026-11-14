@@ -68,7 +68,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if wants_json:
             return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
-        if exc.status_code == 401:
+        password_reset = (
+            request.method == "POST"
+            and request.url.path.startswith("/admin/users/")
+            and request.url.path.endswith("/password")
+        )
+        if exc.status_code == 401 and not password_reset:
             next_path = request.url.path
             if request.url.query:
                 next_path = f"{next_path}?{request.url.query}"

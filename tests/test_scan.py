@@ -7,7 +7,8 @@ from sqlmodel import Session, select
 
 from app.models import Role, Ticket, TicketStatus, User
 from app.services.scan import check_in
-from tests.helpers import fresh, issue_ticket
+from app.services.users import create_ticketer
+from tests.helpers import fresh, issue_ticket, issue_ticket_as
 
 STATE_KEYS = {"state", "ticket_id", "name", "batch", "checked_in_at", "checked_in_by"}
 
@@ -251,6 +252,27 @@ def test_search_never_returns_tokens(admin_client: TestClient, session: Session)
 
     response = admin_client.get("/api/scan/search", params={"q": "Amara"})
 
+    assert ticket.token not in response.text
+    assert "token" not in response.json()[0]
+
+
+def test_ticketer_scanner_search_includes_other_ticketers_guests(
+    ticketer_client: TestClient, session: Session
+):
+    other_user = create_ticketer(session, "ticketer2", "ticketer2-pass-123")
+    assert other_user.id is not None
+    ticket = issue_ticket_as(
+        session,
+        other_user.id,
+        name="Other Ticketer Guest",
+        email="other-guest@example.com",
+        reference="SCAN-TICKETER-001",
+    )
+
+    response = ticketer_client.get("/api/scan/search", params={"q": "Other Ticketer Guest"})
+
+    assert response.status_code == 200
+    assert [item["name"] for item in response.json()] == ["Other Ticketer Guest"]
     assert ticket.token not in response.text
     assert "token" not in response.json()[0]
 

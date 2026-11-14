@@ -83,6 +83,16 @@ def set_active(session: Session, user: User, make_active: bool) -> User:
     return user
 
 
+def set_password(session: Session, user: User, new_password: str) -> User:
+    if user.role is Role.admin:
+        raise InvalidUserData("The admin account password cannot be changed here.")
+    user.password_hash = hash_password(validate_password(new_password))
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user
+
+
 def get_admin(session: Session) -> User | None:
     return session.exec(select(User).where(User.role == Role.admin)).first()
 

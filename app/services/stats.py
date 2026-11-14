@@ -41,38 +41,50 @@ def count_users(session: Session, role: Role | None = None) -> int:
     return session.exec(statement).one()
 
 
-def count_tickets(session: Session, status: TicketStatus | None = None) -> int:
+def count_tickets(
+    session: Session,
+    status: TicketStatus | None = None,
+    *,
+    issued_by: int | None = None,
+) -> int:
     statement = select(func.count()).select_from(Ticket)
     if status is not None:
         statement = statement.where(Ticket.status == status)
+    if issued_by is not None:
+        statement = statement.where(Ticket.issued_by == issued_by)
     return session.exec(statement).one()
 
 
-def ticket_totals(session: Session) -> Totals:
-    sold = count_tickets(session) - count_tickets(session, TicketStatus.revoked)
-    revenue = session.exec(
-        select(func.coalesce(func.sum(Ticket.amount_paid), 0)).where(
-            Ticket.status != TicketStatus.revoked
-        )
-    ).one()
-    failed = session.exec(
+def ticket_totals(session: Session, *, issued_by: int | None = None) -> Totals:
+    sold = count_tickets(session, issued_by=issued_by) - count_tickets(
+        session, TicketStatus.revoked, issued_by=issued_by
+    )
+    revenue_statement = select(func.coalesce(func.sum(Ticket.amount_paid), 0)).where(
+        Ticket.status != TicketStatus.revoked
+    )
+    failed_statement = (
         select(func.count())
         .select_from(Ticket)
         .where(
             Ticket.email_status == EmailStatus.failed,
             Ticket.status != TicketStatus.revoked,
         )
-    ).one()
+    )
+    if issued_by is not None:
+        revenue_statement = revenue_statement.where(Ticket.issued_by == issued_by)
+        failed_statement = failed_statement.where(Ticket.issued_by == issued_by)
+    revenue = session.exec(revenue_statement).one()
+    failed = session.exec(failed_statement).one()
     return Totals(
         sold=sold,
-        admitted=count_tickets(session, TicketStatus.checked_in),
+        admitted=count_tickets(session, TicketStatus.checked_in, issued_by=issued_by),
         revenue=int(revenue or 0),
-        ticketers=count_users(session, Role.ticketer),
+        ticketers=1 if issued_by is not None else count_users(session, Role.ticketer),
         failed_emails=failed,
     )
 
 
-def sales_by_staff(session: Session) -> list[SalesRow]:
+def sales_by_staff(session: Session, *, issued_by: int | None = None) -> list[SalesRow]:
     """Issued tickets and revenue per staff account, revoked ones excluded."""
     admitted_count = func.coalesce(
         func.sum(case((Ticket.status == TicketStatus.checked_in, 1), else_=0)), 0
@@ -93,6 +105,8 @@ def sales_by_staff(session: Session) -> list[SalesRow]:
         .group_by(User.id)
         .order_by(func.count(Ticket.id).desc(), User.username)
     )
+    if issued_by is not None:
+        statement = statement.where(User.id == issued_by)
     return [
         SalesRow(
             username=username,
@@ -105,7 +119,9 @@ def sales_by_staff(session: Session) -> list[SalesRow]:
     ]
 
 
-def recent_admissions(session: Session, limit: int = 8) -> list[Admission]:
+def recent_admissions(
+    session: Session, limit: int = 8, *, issued_by: int | None = None
+) -> list[Admission]:
     statement = (
         select(Ticket, User.username)
         .join(User, Ticket.checked_in_by == User.id, isouter=True)
@@ -113,6 +129,8 @@ def recent_admissions(session: Session, limit: int = 8) -> list[Admission]:
         .order_by(Ticket.checked_in_at.desc())
         .limit(limit)
     )
+    if issued_by is not None:
+        statement = statement.where(Ticket.issued_by == issued_by)
     return [
         Admission(
             ticket_id=ticket.id,

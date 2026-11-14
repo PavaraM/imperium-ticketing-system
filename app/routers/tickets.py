@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlmodel import select
 
 from app.deps import AdminDep, SessionDep, UserDep
-from app.models import EmailStatus, Ticket, User
+from app.models import EmailStatus, Role, Ticket, User
 from app.services.delivery import deliver_ticket_email
 from app.services.qr import render_qr_png
 from app.services.tickets import (
@@ -25,6 +25,17 @@ from app.services.tickets import (
 from app.templating import add_flash, format_local_time, render
 
 router = APIRouter(prefix="/tickets")
+
+
+def _issued_by_filter(user: User) -> int | None:
+    return (user.id or 0) if user.role is Role.ticketer else None
+
+
+def _accessible_ticket(session: SessionDep, user: User, ticket_id: int) -> Ticket | None:
+    ticket = get_ticket(session, ticket_id)
+    if ticket is not None and user.role is Role.ticketer and ticket.issued_by != user.id:
+        return None
+    return ticket
 
 
 @router.get("", response_class=HTMLResponse)
@@ -44,7 +55,9 @@ def list_tickets(
         request,
         "tickets_list.html",
         user=user,
-        tickets=search_tickets(session, q, email_status=email_filter),
+        tickets=search_tickets(
+            session, q, email_status=email_filter, issued_by=_issued_by_filter(user)
+        ),
         q=q,
         email=email_filter.value if email_filter else "",
     )
@@ -171,7 +184,7 @@ async def create_ticket_view(
 
 @router.get("/{ticket_id}", response_class=HTMLResponse)
 def ticket_detail(ticket_id: int, request: Request, user: UserDep, session: SessionDep):
-    ticket = get_ticket(session, ticket_id)
+    ticket = _accessible_ticket(session, user, ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return render(
@@ -186,7 +199,7 @@ def ticket_detail(ticket_id: int, request: Request, user: UserDep, session: Sess
 
 @router.get("/{ticket_id}/qr.png")
 def ticket_qr(ticket_id: int, user: UserDep, session: SessionDep):
-    ticket = get_ticket(session, ticket_id)
+    ticket = _accessible_ticket(session, user, ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return Response(
@@ -204,7 +217,7 @@ def resend_ticket_email(
     session: SessionDep,
     background: BackgroundTasks,
 ):
-    ticket: Ticket | None = get_ticket(session, ticket_id)
+    ticket = _accessible_ticket(session, user, ticket_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
 

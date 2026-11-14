@@ -52,6 +52,15 @@
                   {{ "Re-enable" if not account.is_active else "Disable" }}
                 </button>
               </form>
+              <form method="post" action="/admin/users/{{ account.id }}/password"
+                    class="password-reset">
+                <label class="sr-only" for="password-{{ account.id }}">
+                  New password for {{ account.username }}
+                </label>
+                <input id="password-{{ account.id }}" type="password" name="password"
+                       required minlength="8" autocomplete="new-password">
+                <button type="submit" class="button button-quiet">Reset password</button>
+              </form>
             {% endif %}
           </div>
         </li>

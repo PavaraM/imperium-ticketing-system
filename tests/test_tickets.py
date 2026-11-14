@@ -4,6 +4,9 @@ import io
 from sqlmodel import Session, select
 
 from app.models import EmailStatus, Ticket, TicketStatus
+from app.services.users import create_ticketer
+from tests.conftest import ADMIN_PASSWORD, ADMIN_USERNAME, login
+from tests.helpers import issue_ticket_as
 
 VALID_TICKET = {
     "name": "Test Guest One",
@@ -171,6 +174,69 @@ def test_ticketer_can_create_and_view_tickets(ticketer_client, app):
     assert detail.status_code == 200
     assert "Test Guest One" in detail.text
     assert "valid" in detail.text
+
+
+def test_ticketer_can_only_access_own_tickets(ticketer_client, session, mailer):
+    own_ticket = create(
+        ticketer_client,
+        name="Ticketer A Guest",
+        email="a-guest@example.com",
+        bank_reference="TICKETER-A-001",
+    )
+    assert own_ticket.status_code == 303
+    own_id = int(own_ticket.headers["location"].rsplit("/", 1)[-1])
+
+    other_user = create_ticketer(session, "ticketer2", "ticketer2-pass-123")
+    assert other_user.id is not None
+    other_ticket = issue_ticket_as(
+        session,
+        other_user.id,
+        name="Ticketer B Guest",
+        email="b-guest@example.com",
+        reference="TICKETER-B-001",
+    )
+
+    listing = ticketer_client.get("/tickets")
+    assert "Ticketer A Guest" in listing.text
+    assert "Ticketer B Guest" not in listing.text
+
+    own_search = ticketer_client.get("/tickets", params={"q": "Ticketer A Guest"})
+    assert "Ticketer A Guest" in own_search.text
+    other_search = ticketer_client.get("/tickets", params={"q": "Ticketer B Guest"})
+    assert "Nothing matches" in other_search.text
+
+    sent_count = len(mailer.sent)
+    denied_responses = (
+        ticketer_client.get(f"/tickets/{other_ticket.id}"),
+        ticketer_client.get(f"/tickets/{other_ticket.id}/qr.png"),
+        ticketer_client.post(f"/tickets/{other_ticket.id}/resend", follow_redirects=False),
+    )
+    missing_responses = (
+        ticketer_client.get("/tickets/9999"),
+        ticketer_client.get("/tickets/9999/qr.png"),
+        ticketer_client.post("/tickets/9999/resend", follow_redirects=False),
+    )
+    for response, missing in zip(denied_responses, missing_responses, strict=True):
+        assert response.status_code == 404
+        assert "Ticket not found" in response.text
+        assert response.text == missing.text
+    assert len(mailer.sent) == sent_count
+
+    own_detail = ticketer_client.get(f"/tickets/{own_id}")
+    own_qr = ticketer_client.get(f"/tickets/{own_id}/qr.png")
+    own_resend = ticketer_client.post(f"/tickets/{own_id}/resend", follow_redirects=False)
+    assert own_detail.status_code == 200
+    assert own_qr.status_code == 200
+    assert own_qr.content.startswith(b"\x89PNG")
+    assert own_resend.status_code == 303
+
+    ticketer_client.post("/logout", follow_redirects=False)
+    assert login(ticketer_client, ADMIN_USERNAME, ADMIN_PASSWORD).status_code == 303
+    admin_listing = ticketer_client.get("/tickets")
+    assert "Ticketer A Guest" in admin_listing.text
+    assert "Ticketer B Guest" in admin_listing.text
+    admin_search = ticketer_client.get("/tickets", params={"q": "Ticketer B Guest"})
+    assert "Ticketer B Guest" in admin_search.text
 
 
 def test_detail_and_list_hide_the_token(admin_client, app):

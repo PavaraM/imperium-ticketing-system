@@ -13,14 +13,12 @@
       <header class="topbar">
         <a class="brand" href="/" aria-label="{{ event_name }} home">{{ event_name }}</a>
         <nav class="nav" aria-label="Main">
-          {% if user.role.value == "admin" %}
-            <a href="/" {% if request.url.path == "/" %}aria-current="page"{% endif %}>
-              <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-7h6v7" />
-              </svg>
-              <span>Dashboard</span>
-            </a>
-          {% endif %}
+          <a href="/" {% if request.url.path == "/" %}aria-current="page"{% endif %}>
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-7h6v7" />
+            </svg>
+            <span>Dashboard</span>
+          </a>
           <a href="/tickets" {% if request.url.path.startswith("/tickets") %}aria-current="page"{% endif %}>
             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M4 5h16v4a3 3 0 0 0 0 6v4H4v-4a3 3 0 0 0 0-6V5Z" />

@@ -19,6 +19,14 @@ def _toggle(client, user_id: int):
     return client.post(f"/admin/users/{user_id}/toggle", follow_redirects=False)
 
 
+def _reset_password(client, user_id: int, password: str):
+    return client.post(
+        f"/admin/users/{user_id}/password",
+        data={"password": password},
+        follow_redirects=False,
+    )
+
+
 def test_anonymous_cannot_open_staff_page(client):
     response = client.get("/admin/users", follow_redirects=False)
 
@@ -42,6 +50,20 @@ def test_ticketer_cannot_create_accounts(ticketer_client):
     assert response.status_code == 403
 
 
+def test_ticketer_cannot_reset_password(ticketer_client, app):
+    account = next(user for user in _users(app) if user.role is Role.ticketer)
+
+    response = _reset_password(ticketer_client, account.id, "new-fake-password")
+
+    assert response.status_code == 403
+
+
+def test_anonymous_cannot_reset_password(anon_client):
+    response = _reset_password(anon_client, 1, "new-fake-password")
+
+    assert response.status_code == 401
+
+
 def test_admin_creates_ticketer(admin_client, app):
     response = admin_client.post(
         "/admin/users",
@@ -57,6 +79,75 @@ def test_admin_creates_ticketer(admin_client, app):
     assert created[0].role is Role.ticketer
     assert created[0].is_active is True
     assert created[0].password_hash != "door-pass-123"
+
+
+def test_admin_resets_ticketer_password(admin_client, app):
+    admin_client.post(
+        "/admin/users",
+        data={"username": "password-reset", "password": "old-fake-pass"},
+        follow_redirects=False,
+    )
+    account = next(user for user in _users(app) if user.username == "password-reset")
+    old_hash = account.password_hash
+    new_password = "new-fake-pass-123"
+
+    response = _reset_password(admin_client, account.id, new_password)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin/users"
+    assert new_password not in response.headers["location"]
+    page = admin_client.get("/admin/users")
+    assert f"Password changed for ticketer “{account.username}”." in page.text
+    assert new_password not in page.text
+    assert next(user for user in _users(app) if user.id == account.id).password_hash != old_hash
+
+    admin_client.post("/logout", follow_redirects=False)
+    assert login(admin_client, account.username, "old-fake-pass").status_code == 401
+    assert login(admin_client, account.username, new_password).status_code == 303
+
+
+def test_short_password_reset_does_not_change_password(admin_client, app):
+    admin_client.post(
+        "/admin/users",
+        data={"username": "short-reset", "password": "old-fake-pass"},
+        follow_redirects=False,
+    )
+    account = next(user for user in _users(app) if user.username == "short-reset")
+    old_hash = account.password_hash
+
+    response = _reset_password(admin_client, account.id, "tiny")
+
+    assert response.status_code == 303
+    assert "tiny" not in response.headers["location"]
+    assert "at least 8" in admin_client.get("/admin/users").text
+    assert next(user for user in _users(app) if user.id == account.id).password_hash == old_hash
+
+    admin_client.post("/logout", follow_redirects=False)
+    assert login(admin_client, account.username, "old-fake-pass").status_code == 303
+
+
+def test_admin_account_cannot_be_reset(admin_client, app):
+    admin = next(user for user in _users(app) if user.role is Role.admin)
+    old_hash = admin.password_hash
+    new_password = "new-admin-fake-pass"
+
+    response = _reset_password(admin_client, admin.id, new_password)
+
+    assert response.status_code == 303
+    page = admin_client.get("/admin/users")
+    assert "admin account password cannot be changed" in page.text
+    assert new_password not in page.text
+    assert next(user for user in _users(app) if user.id == admin.id).password_hash == old_hash
+
+    admin_client.post("/logout", follow_redirects=False)
+    assert login(admin_client, ADMIN_USERNAME, ADMIN_PASSWORD).status_code == 303
+
+
+def test_reset_password_unknown_user_is_404(admin_client):
+    response = _reset_password(admin_client, 9999, "new-fake-password")
+
+    assert response.status_code == 404
+    assert "User not found" in response.text
 
 
 def test_new_ticketer_can_log_in(admin_client):
@@ -168,8 +259,17 @@ def test_admin_cannot_disable_itself(admin_client, app):
 
 
 def test_staff_page_lists_accounts(admin_client):
+    admin_client.post(
+        "/admin/users",
+        data={"username": "reset-form-user", "password": "fake-password-123"},
+        follow_redirects=False,
+    )
+    account = next(user for user in _users(admin_client.app) if user.username == "reset-form-user")
     response = admin_client.get("/admin/users")
 
     assert response.status_code == 200
     assert ADMIN_USERNAME in response.text
     assert "Add a ticketer" in response.text
+    assert f'action="/admin/users/{account.id}/password"' in response.text
+    assert 'type="password" name="password"' in response.text
+    assert 'autocomplete="new-password"' in response.text

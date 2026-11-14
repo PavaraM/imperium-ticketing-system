@@ -13,6 +13,7 @@ from app.services.users import (
     create_ticketer,
     normalize_username,
     set_active,
+    set_password,
     validate_password,
 )
 from app.templating import add_flash, render
@@ -63,6 +64,27 @@ def toggle_user(
 
     state = "re-enabled" if target.is_active else "disabled"
     add_flash(request, f"Ticketer “{target.username}” {state}.")
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@router.post("/users/{user_id}/password")
+def reset_user_password(
+    user_id: int,
+    request: Request,
+    user: AdminDep,
+    session: SessionDep,
+    password: Annotated[str, Form()] = "",
+):
+    target = session.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        set_password(session, target, password)
+    except InvalidUserData as exc:
+        add_flash(request, str(exc))
+        return RedirectResponse("/admin/users", status_code=303)
+
+    add_flash(request, f"Password changed for ticketer “{target.username}”.")
     return RedirectResponse("/admin/users", status_code=303)
 
 
