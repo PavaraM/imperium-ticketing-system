@@ -102,12 +102,13 @@ All settings are environment variables and are documented in `.env.example`.
 | `SECRET_KEY` | Required signing key for sessions. Generate a long random value. |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | Required credentials for the initial admin seed. |
 | `DB_PATH` | SQLite path; defaults to `var/tickets.db` inside the persistent volume. |
+| `SESSION_MAX_AGE` | Session lifetime in seconds; defaults to 12 hours. |
 | `COOKIE_SECURE` | Enable secure session cookies over HTTPS. |
 | `TRUST_PROXY` | Trust forwarded client IP headers only behind the included trusted proxy. |
 | `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_SECONDS` | In-memory login throttling limits. |
 | `BASE_URL` | Public HTTPS base URL used in email links. |
 | `EVENT_*`, `CURRENCY` | Event name, date, venue, timezone and currency shown to staff and buyers. |
-| `MAIL_MODE`, `SMTP_*` | Console or SMTP delivery configuration. |
+| `MAIL_MODE`, `SMTP_*` | Console or SMTP delivery configuration, including host, port, STARTTLS, credentials and sender details. |
 
 Never commit `.env`, real guest data, database files, exported CSVs, or backups. `.env.example` uses dummy values and should remain safe to share.
 
@@ -145,14 +146,15 @@ For local development, `uv run python -m scripts.reset_db` shows reset options a
 
 ## CI and image publishing
 
-The repository currently has no GitHub Actions workflow or published container image configured. The production image is built from the repository's `Dockerfile` by `docker compose up --build`. Add CI and GHCR publishing through the repository's workflow configuration when those deployment credentials and release rules are ready.
+GitHub Actions runs the CI workflow on pushes and pull requests. It installs the locked dependencies with `uv sync --locked`, then runs Ruff linting, a formatting check and the pytest suite. Image publishing runs after those checks pass, on pushes to `main` only. It builds Linux `amd64` and `arm64` images and publishes `latest` and commit-SHA tags to `ghcr.io/pavaram/imperium-ticketing-system` using the workflow's `GITHUB_TOKEN`.
 
-Useful local checks:
+For local checks before pushing:
 
 ```bash
-uv run pytest
+uv sync --locked
 uv run ruff check .
 uv run ruff format --check .
+uv run pytest
 docker compose build app
 ```
 
