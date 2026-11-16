@@ -5,12 +5,12 @@ volumes:
 
 services:
   app:
-    build: .
+    image: ghcr.io/pavaram/imperium-ticketing-system:sha-887f61b
     env_file: .env
     environment:
       COOKIE_SECURE: "true"
       TRUST_PROXY: "true"
-      #BASE_URL: "https://<your hostname>"
+      BASE_URL: "https://<your hostname>"
     volumes:
       - ticketing-data:/app/var
     restart: unless-stopped
@@ -24,6 +24,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       app:
         condition: service_healthy
