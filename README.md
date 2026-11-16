@@ -2,9 +2,11 @@
 
 [![CI](https://github.com/PavaraM/imperium-ticketing-system/actions/workflows/ci.yml/badge.svg)](https://github.com/PavaraM/imperium-ticketing-system/actions/workflows/ci.yml)
 
-A containerized, self-hosted QR ticketing service for a school party of about 200 guests. This repository is also a DevOps project: it packages the application into a non-root container, runs it with persistent storage, terminates HTTPS with Caddy, and documents operational practices for secrets, health checks, and SQLite backups.
+A self-hosted QR ticketing service for a school batch party of about 200 guests.
 
-The application is staff-only. Admins and ticketers issue tickets for paid buyers; there is no public registration or checkout. Ticket QRs contain only an unguessable random token. The scanner looks up a ticket first and admits it with one atomic database update.
+I built this for our school’s batch party. Ready-made ticketing services were available, but I wanted to vibecode the app and handle the DevOps myself. That meant taking the project beyond the app: building and publishing container images, setting up HTTPS deployment, managing configuration and secrets, and planning for backups and recovery. This README documents that operational work and what I learned putting it together.
+
+The app supports staff issuing tickets to paid guests and checking them in by QR code. The rest of this project focuses on how it is built, deployed, and operated.
 
 ## DevOps goals
 
@@ -14,6 +16,14 @@ The application is staff-only. Admins and ticketers issue tickets for paid buyer
 - Put Caddy in front of the app for HTTPS and automatic certificate management.
 - Keep secrets in the host's `.env`, never in the image or source control.
 - Back up SQLite using its online backup API and practice restoring it.
+
+## CI and image publishing
+
+GitHub Actions runs on pushes and pull requests. It installs locked dependencies with `uv sync --locked`, then runs Ruff linting, a formatting check, and the pytest suite. On pushes to `main`, a successful CI run is followed by a multi-platform image build for Linux `amd64` and `arm64`. The workflow publishes `latest` and commit-SHA tags to GHCR using `GITHUB_TOKEN`.
+
+For an event deployment, pin the app to a commit-SHA image tag so the running version is explicit and can be rolled back by restoring the previous tag. The workflow is the build and publish pipeline; deploying the image to the server is currently a manual `docker compose pull` and restart.
+
+**Build evidence:** [GitHub Actions runs](https://github.com/PavaraM/imperium-ticketing-system/actions/workflows/ci.yml) · [GHCR package](https://github.com/PavaraM/imperium-ticketing-system/pkgs/container/imperium-ticketing-system)
 
 ## Architecture
 
@@ -27,7 +37,7 @@ flowchart LR
     Operator -->|backup / restore| Data
 ```
 
-## Image deployment pipeline
+## Deployment pipeline
 
 ```mermaid
 flowchart LR
@@ -204,10 +214,6 @@ This restore procedure has not been verified; the owner must perform a restore t
 
 For local development, `uv run python -m scripts.reset_db` shows reset options and creates a backup before deletion. `--tickets-only` preserves staff; `--yes` skips the confirmation prompt. Do not run reset commands against production unless you intend to erase the selected data. The admin Staff page also offers a reset flow with an automatic SQLite backup and explicit confirmation.
 
-## CI and image publishing
-
-GitHub Actions runs the CI workflow on pushes and pull requests. It installs the locked dependencies with `uv sync --locked`, then runs Ruff linting, a formatting check and the pytest suite. Image publishing runs after those checks pass, on pushes to `main` only. It builds Linux `amd64` and `arm64` images and publishes `latest` and commit-SHA tags to `ghcr.io/pavaram/imperium-ticketing-system` using the workflow's `GITHUB_TOKEN`.
-
 For local source builds and checks before pushing:
 
 ```bash
@@ -232,20 +238,14 @@ uv run pytest
 
 The system is designed for a small event and one app worker. The login throttle is in process memory and resets on restart; do not scale to multiple workers or replicas without replacing it with shared rate-limit storage. HTTPS is required for camera access on phones, and the deployment should be rehearsed with multiple devices before ticketing opens.
 
-## Screenshots
-
-<!-- Add screenshots here. -->
-
 ## App behavior
 
-- Admins can see all tickets, manage ticketers, export CSV, use the dashboard and reset data; admins can also reset a ticketer's password. Ticketers can see, open and resend only tickets they issued; access to another ticketer's ticket returns 404. Scanner name search still covers all guests.
-- Email is sent after ticket creation. Delivery failure marks the email failed without losing the ticket; resend uses the same token.
-- Scanner lookup is read-only. Check-in uses one atomic `UPDATE ... WHERE token=? AND status='valid'` and checks the affected row count.
-- The camera scanner uses the vendored `html5-qrcode` asset; manual name search is available as a fallback.
-- SQLite runs in WAL mode. The deployment uses one app process because login throttling is process-local.
+The app is staff-only: admins manage ticketers and tickets, while ticketers manage tickets they issued. Ticket QR codes contain only a random token. Scanner lookup is read-only; admission uses one atomic database update. Email delivery runs after ticket creation, and delivery failure does not lose the ticket. SQLite runs in WAL mode. The deployment uses one app process because login throttling is process-local.
+
+Operationally, the app needs persistent storage for the SQLite database, HTTPS for phone camera access, and careful handling of backups, exports, and console email files because they contain ticket data.
 
 ## Roadmap (planned, not implemented)
 
 - Prometheus metrics and a Grafana dashboard for tickets created, check-ins, rejected check-ins, email failures and request latency; metric labels must not contain personal data.
 - Terraform for the server.
-- CD with a manual trigger.
+- A manual-trigger deployment workflow (CD). Deployments are currently performed manually with Docker Compose.
