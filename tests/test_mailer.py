@@ -22,12 +22,15 @@ def test_reservation_email_confirms_seat_without_qr(settings):
         amount_paid=75_000,
     )
     body = message.get_body(preferencelist=("plain",)).get_content()
+    html = message.get_body(preferencelist=("html",)).get_content()
 
     assert message["Subject"] == "Seat reserved for Test Party"
     assert "Your seat for Test Party is reserved." in body
     assert "not an entry ticket" in body
     assert "Remaining balance: LKR 750.00" in body
     assert "Pay by: 05 Dec 2026, 19:00 +0530" in body
+    assert "All payments are non-refundable." in body
+    assert "<strong>All payments are non-refundable.</strong>" in html
     assert len(message.get_payload()) == 2
     assert all(part.get_content_type() != "image/png" for part in message.walk())
 
@@ -49,9 +52,12 @@ def test_message_carries_event_details(settings):
     assert message["To"] == "guest@example.com"
     assert "Test Party" in message["Subject"]
     body = message.get_body(preferencelist=("plain",)).get_content()
+    html = message.get_body(preferencelist=("html",)).get_content()
     assert "Test Guest" in body
     assert "2026-12-31" in body
     assert "Town Hall" in body
+    assert "All payments are non-refundable." in body
+    assert "<strong>All payments are non-refundable.</strong>" in html
 
 
 def test_half_ticket_email_explains_reservation_and_balance_deadline(settings):
@@ -66,10 +72,13 @@ def test_half_ticket_email_explains_reservation_and_balance_deadline(settings):
         total_price=150_000,
     )
     body = message.get_body(preferencelist=("plain",)).get_content()
+    html = message.get_body(preferencelist=("html",)).get_content()
 
     assert "reserves your place only and does not grant entry" in body
     assert "LKR 750.00" in body
     assert "by 05 Dec 2026, 19:00 +0530" in body
+    assert "All payments are non-refundable." in body
+    assert "<strong>All payments are non-refundable.</strong>" in html
 
 
 def test_html_message_is_responsive_and_escapes_dynamic_content(settings):

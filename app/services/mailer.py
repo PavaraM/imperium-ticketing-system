@@ -78,7 +78,8 @@ def build_reservation_message(
         "after staff record your full payment.\n\n"
         f"When: {settings.event_date}\n"
         f"Where: {settings.event_venue}\n\n"
-        f"{payment_details}"
+        f"{payment_details}\n"
+        "All payments are non-refundable.\n"
     )
     html = f"""\
 <!doctype html>
@@ -96,6 +97,7 @@ border:1px solid #dce6e1;border-radius:16px">
     <p><strong>Deposit received:</strong> {safe_currency} {amount_paid / 100:,.2f}<br>
     <strong>Remaining balance:</strong> {safe_currency} {balance:,.2f}<br>
     <strong>Pay by:</strong> {escape(deadline)}</p>
+    <p><strong>All payments are non-refundable.</strong></p>
   </main>
 </body></html>
 """
@@ -160,6 +162,7 @@ def build_ticket_message(
         f"Where: {settings.event_venue}\n\n"
         "Your QR ticket is attached to this email.\n"
         f"{payment_text}\n"
+        "All payments are non-refundable.\n"
     )
 
     html = f"""\
@@ -239,6 +242,7 @@ def build_ticket_message(
             <tr>
               <td style="padding:18px 28px 28px;color:#52635e;font-size:14px;line-height:1.6;">
                 <p style="margin:0;">Your QR ticket is attached to this email. {payment_html}</p>
+                <p style="margin:12px 0 0;"><strong>All payments are non-refundable.</strong></p>
               </td>
             </tr>
           </table>
