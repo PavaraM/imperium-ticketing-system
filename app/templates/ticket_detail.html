@@ -10,8 +10,12 @@
       <h1>{{ ticket.name }}</h1>
       <p class="muted">Ticket #{{ ticket.id }}</p>
     </div>
-    <span class="badge badge-{{ ticket.status.value }}">
-      {{ ticket.status.value | replace("_", " ") }}
+    <span class="badge badge-{% if ticket.ticket_type.value == 'half' and not ticket.balance_paid_at %}payment_due{% else %}{{ ticket.status.value }}{% endif %}">
+      {% if ticket.ticket_type.value == "half" and not ticket.balance_paid_at %}
+        {% if payment_overdue %}payment overdue{% else %}payment due{% endif %}
+      {% else %}
+        {{ ticket.status.value | replace("_", " ") }}
+      {% endif %}
     </span>
   </div>
 
@@ -32,9 +36,38 @@
           <dd>{{ ticket.batch or "—" }}</dd>
         </div>
         <div class="fact">
-          <dt>Paid</dt>
+          <dt>Ticket type</dt>
+          <dd>{{ ticket.ticket_type.value | title }}</dd>
+        </div>
+        <div class="fact">
+          <dt>Ticket price</dt>
+          <dd>{{ currency }} {{ ticket.total_price | money }}</dd>
+        </div>
+        <div class="fact">
+          <dt>Paid at issue</dt>
           <dd>{{ currency }} {{ ticket.amount_paid | money }}</dd>
         </div>
+        {% if ticket.ticket_type.value == "half" %}
+          <div class="fact">
+            <dt>Balance due</dt>
+            <dd>{{ currency }} {{ (ticket.total_price - ticket.amount_paid if not ticket.balance_paid_at else 0) | money }}</dd>
+          </div>
+          <div class="fact">
+            <dt>Balance deadline</dt>
+            <dd>{{ payment_deadline | local_time(event_tz) }}</dd>
+          </div>
+          {% if ticket.balance_paid_at %}
+            <div class="fact">
+              <dt>Balance paid</dt>
+              <dd>{{ ticket.balance_paid_at | local_time(event_tz) }} · <code>{{ ticket.balance_payment_reference }}</code> · {{ balance_payment_user.username if balance_payment_user else "—" }}</dd>
+            </div>
+          {% else %}
+            <div class="fact">
+              <dt>Entry</dt>
+              <dd>{% if payment_overdue %}Blocked · payment overdue{% else %}Blocked until balance is paid{% endif %}</dd>
+            </div>
+          {% endif %}
+        {% endif %}
         <div class="fact">
           <dt>Bank reference</dt>
           <dd><code>{{ ticket.bank_reference }}</code></dd>
@@ -69,14 +102,33 @@
     </section>
 
     <section class="panel qr-panel">
-      <h2>Entry QR</h2>
+      <h2>{% if ticket.ticket_type.value == "half" and not ticket.balance_paid_at %}Reservation QR{% else %}Entry QR{% endif %}</h2>
       <img src="/tickets/{{ ticket.id }}/qr.png" width="240" height="240"
            alt="QR code for ticket {{ ticket.id }}">
-      <p class="muted">Only the ticket token is encoded — no personal details.</p>
+      <p class="muted">
+        Only the ticket token is encoded — no personal details.
+        {% if ticket.ticket_type.value == "half" and not ticket.balance_paid_at %}
+          This QR does not grant entry until the balance is recorded.
+        {% endif %}
+      </p>
       <form method="post" action="/tickets/{{ ticket.id }}/resend">
         <button type="submit" class="button button-quiet">Resend email</button>
       </form>
       {% if user.role.value == "admin" and ticket.status.value == "valid" %}
+        {% if ticket.ticket_type.value == "half" and not ticket.balance_paid_at %}
+          <form method="post" action="/tickets/{{ ticket.id }}/balance" class="stack">
+            <h3>Record balance payment</h3>
+            <label for="balance-reference">Balance bank reference
+              <input id="balance-reference" name="bank_reference" required minlength="3" maxlength="80">
+            </label>
+            {% if payment_overdue %}
+              <label><input type="checkbox" name="confirm_late" value="yes" required>
+                Confirm this late payment and allow entry
+              </label>
+            {% endif %}
+            <button type="submit" class="button">Record balance paid</button>
+          </form>
+        {% endif %}
         <form method="post" action="/tickets/{{ ticket.id }}/revoke" class="revoke-form">
           <button type="submit" class="button button-danger">Revoke ticket</button>
         </form>

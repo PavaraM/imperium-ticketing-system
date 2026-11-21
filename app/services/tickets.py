@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import secrets
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -12,17 +13,27 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, or_, select
 
-from app.models import EmailStatus, Ticket, TicketStatus
+from app.config import Settings
+from app.models import EmailStatus, Ticket, TicketStatus, TicketType, User
 
 PHONE_RE = re.compile(r"^\+?[0-9]{9,15}$")
 MAX_AMOUNT = Decimal("10000000")
-FORM_FIELDS = ("name", "email", "whatsapp_number", "batch", "amount", "bank_reference")
+FORM_FIELDS = (
+    "name",
+    "email",
+    "whatsapp_number",
+    "batch",
+    "ticket_type",
+    "amount",
+    "bank_reference",
+)
 FIELD_LABELS = {
     "name": "Name",
     "email": "Email",
     "whatsapp_number": "WhatsApp number",
     "batch": "Batch",
-    "amount": "Amount paid",
+    "amount": "Ticket price",
+    "ticket_type": "Ticket type",
     "bank_reference": "Bank reference",
 }
 
@@ -48,6 +59,7 @@ class TicketInput(BaseModel):
     email: EmailStr
     whatsapp_number: str
     batch: str = Field(default="", max_length=60)
+    ticket_type: TicketType = TicketType.full
     amount: Decimal = Field(ge=Decimal(0), le=MAX_AMOUNT)
     bank_reference: str = Field(min_length=3, max_length=80)
 
@@ -88,11 +100,13 @@ class TicketInput(BaseModel):
         if isinstance(value, str):
             value = value.replace(",", "").replace(" ", "").strip()
             if not value:
-                raise ValueError("Enter the amount paid, e.g. 1500 or 1500.50.")
+                raise ValueError("Enter the full ticket price, e.g. 1500 or 1500.50.")
         try:
             amount = Decimal(str(value))
         except (InvalidOperation, ValueError) as exc:
-            raise ValueError("Enter the amount paid as a number, e.g. 1500 or 1500.50.") from exc
+            raise ValueError(
+                "Enter the full ticket price as a number, e.g. 1500 or 1500.50."
+            ) from exc
         if not amount.is_finite():
             raise ValueError("Enter a real amount.")
         if amount < 0 or amount > MAX_AMOUNT:
@@ -108,6 +122,11 @@ class TicketInput(BaseModel):
         if isinstance(value, str):
             return value.strip().upper()
         return value
+
+    @field_validator("ticket_type", mode="before")
+    @classmethod
+    def _clean_ticket_type(cls, value: Any) -> Any:
+        return value or TicketType.full
 
 
 def parse_ticket_input(data: dict[str, str]) -> TicketInput:
@@ -127,9 +146,20 @@ def parse_ticket_input(data: dict[str, str]) -> TicketInput:
 def create_ticket(session: Session, data: TicketInput, *, issued_by: int) -> Ticket:
     """Persist a valid ticket. Duplicate references are rejected by the DB too."""
     reference = data.bank_reference
-    exists = session.exec(select(Ticket.id).where(Ticket.bank_reference == reference)).first()
+    exists = session.exec(
+        select(Ticket.id).where(
+            or_(Ticket.bank_reference == reference, Ticket.balance_payment_reference == reference)
+        )
+    ).first()
     if exists is not None:
         raise DuplicateBankReference(reference)
+
+    total_price = int(data.amount * 100)
+    if data.ticket_type is TicketType.half and total_price % 2:
+        raise TicketValidationError(
+            ["Ticket price: half ticket price must split into whole cents."]
+        )
+    amount_paid = total_price if data.ticket_type is TicketType.full else total_price // 2
 
     for _ in range(3):
         ticket = Ticket(
@@ -138,7 +168,9 @@ def create_ticket(session: Session, data: TicketInput, *, issued_by: int) -> Tic
             email=str(data.email),
             whatsapp_number=data.whatsapp_number,
             batch=data.batch or None,
-            amount_paid=int(data.amount * 100),
+            amount_paid=amount_paid,
+            total_price=total_price,
+            ticket_type=data.ticket_type,
             bank_reference=reference,
             status=TicketStatus.valid,
             email_status=EmailStatus.pending,
@@ -149,7 +181,7 @@ def create_ticket(session: Session, data: TicketInput, *, issued_by: int) -> Tic
             session.commit()
         except IntegrityError as exc:
             session.rollback()
-            if "bank_reference" in str(exc.orig):
+            if "bank_reference" in str(exc.orig) or "balance_payment_reference" in str(exc.orig):
                 raise DuplicateBankReference(reference) from exc
             continue
         session.refresh(ticket)
@@ -188,6 +220,72 @@ def revoke_ticket(session: Session, ticket_id: int) -> str:
     if ticket.status is TicketStatus.revoked:
         return "already_revoked"
     return "checked_in"
+
+
+def event_payment_deadline(settings: Settings) -> datetime:
+    """Return the event-local time exactly seven days before the event."""
+    from zoneinfo import ZoneInfo
+
+    zone = ZoneInfo(settings.event_timezone)
+    event_time = settings.event_datetime
+    event_time = event_time.replace(tzinfo=zone) if event_time.tzinfo is None else event_time
+    return event_time.astimezone(zone) - timedelta(days=7)
+
+
+def record_balance_payment(
+    session: Session,
+    ticket: Ticket,
+    actor: User,
+    reference: str,
+    *,
+    settings: Settings,
+    confirm_late: bool = False,
+    now: datetime | None = None,
+) -> str:
+    """Record the remaining half-ticket payment; return a result code."""
+    if ticket.ticket_type is not TicketType.half:
+        return "not_half"
+    if ticket.balance_paid_at is not None:
+        return "already_paid"
+    normalized = reference.strip().upper()
+    if not 3 <= len(normalized) <= 80:
+        return "invalid_reference"
+    duplicate = session.exec(
+        select(Ticket.id).where(
+            or_(Ticket.bank_reference == normalized, Ticket.balance_payment_reference == normalized)
+        )
+    ).first()
+    if duplicate is not None:
+        return "duplicate_reference"
+
+    current = now or datetime.now(UTC)
+    deadline = event_payment_deadline(settings).astimezone(UTC)
+    is_late = current > deadline
+    if is_late and not confirm_late:
+        return "late_confirmation_required"
+
+    result = session.execute(
+        update(Ticket)
+        .where(
+            Ticket.id == ticket.id,
+            Ticket.ticket_type == TicketType.half,
+            Ticket.balance_paid_at.is_(None),
+        )
+        .values(
+            balance_payment_reference=normalized,
+            balance_paid_at=current,
+            balance_paid_by=actor.id,
+        )
+    )
+    if result.rowcount != 1:
+        session.rollback()
+        return "already_paid"
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        return "duplicate_reference"
+    return "paid_late" if is_late else "paid"
 
 
 def all_tickets(session: Session) -> list[Ticket]:

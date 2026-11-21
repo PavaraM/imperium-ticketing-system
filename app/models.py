@@ -20,6 +20,11 @@ class TicketStatus(StrEnum):
     revoked = "revoked"
 
 
+class TicketType(StrEnum):
+    full = "full"
+    half = "half"
+
+
 class EmailStatus(StrEnum):
     pending = "pending"
     sent = "sent"
@@ -48,7 +53,10 @@ class User(SQLModel, table=True):
 
 class Ticket(SQLModel, table=True):
     __tablename__ = "tickets"
-    __table_args__ = (sa.CheckConstraint("amount_paid >= 0", name="ck_tickets_amount_paid"),)
+    __table_args__ = (
+        sa.CheckConstraint("amount_paid >= 0", name="ck_tickets_amount_paid"),
+        sa.CheckConstraint("total_price >= 0", name="ck_tickets_total_price"),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     token: str = Field(index=True, unique=True, max_length=64)
@@ -58,7 +66,12 @@ class Ticket(SQLModel, table=True):
     batch: str | None = Field(default=None, max_length=60)
     # Money is stored in minor units (cents) to keep arithmetic exact.
     amount_paid: int = Field(default=0, ge=0)
+    total_price: int = Field(default=0, ge=0)
+    ticket_type: TicketType = Field(default=TicketType.full, index=True)
     bank_reference: str = Field(index=True, unique=True, max_length=80)
+    balance_payment_reference: str | None = Field(default=None, max_length=80)
+    balance_paid_at: datetime | None = Field(default=None)
+    balance_paid_by: int | None = Field(default=None, foreign_key="users.id")
     status: TicketStatus = Field(default=TicketStatus.valid, index=True)
     issued_by: int = Field(foreign_key="users.id", index=True)
     created_at: datetime = Field(default_factory=utcnow)

@@ -2,13 +2,15 @@
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from urllib.parse import parse_qs, unquote, urlparse
 
-from sqlalchemy import func, update
+from sqlalchemy import func, or_, update
 from sqlmodel import Session, select
 
-from app.models import Ticket, TicketStatus, User, utcnow
+from app.config import Settings
+from app.models import Ticket, TicketStatus, TicketType, User, utcnow
+from app.services.tickets import event_payment_deadline
 
 # Generated tokens are urlsafe base64; validating the shape keeps junk input away
 # from the database without leaking whether a real token exists.
@@ -23,9 +25,13 @@ class ScanTicket:
     ticket_id: int
     name: str
     batch: str | None
-    status: TicketStatus
+    status: TicketStatus | str
     checked_in_at: datetime | None
     checked_in_by: str | None
+    ticket_type: TicketType
+    amount_paid: int
+    total_price: int
+    balance_due: int
 
 
 def normalize_scan_payload(raw: str) -> str:
@@ -44,15 +50,31 @@ def normalize_scan_payload(raw: str) -> str:
     return value.strip()
 
 
-def _snapshot(session: Session, ticket: Ticket) -> ScanTicket:
+def _snapshot(session: Session, ticket: Ticket, settings: Settings) -> ScanTicket:
     checker = session.get(User, ticket.checked_in_by) if ticket.checked_in_by else None
+    state: TicketStatus | str = ticket.status
+    if (
+        ticket.status is TicketStatus.valid
+        and ticket.ticket_type is TicketType.half
+        and ticket.balance_paid_at is None
+    ):
+        deadline = event_payment_deadline(settings).astimezone(UTC)
+        state = "payment_overdue" if utcnow() > deadline else "payment_due"
     return ScanTicket(
         ticket_id=ticket.id or 0,
         name=ticket.name,
         batch=ticket.batch or None,
-        status=ticket.status,
+        status=state,
         checked_in_at=ticket.checked_in_at,
         checked_in_by=checker.username if checker else None,
+        ticket_type=ticket.ticket_type,
+        amount_paid=ticket.amount_paid,
+        total_price=ticket.total_price,
+        balance_due=(
+            ticket.total_price - ticket.amount_paid
+            if ticket.ticket_type is TicketType.half and ticket.balance_paid_at is None
+            else 0
+        ),
     )
 
 
@@ -66,22 +88,33 @@ def _find(session: Session, *, token: str = "", ticket_id: int | None = None) ->
 
 
 def resolve(
-    session: Session, *, token: str = "", ticket_id: int | None = None
+    session: Session, settings: Settings, *, token: str = "", ticket_id: int | None = None
 ) -> ScanTicket | None:
     """Read-only lookup. Never changes ticket state."""
     ticket = _find(session, token=token, ticket_id=ticket_id)
-    return _snapshot(session, ticket) if ticket else None
+    return _snapshot(session, ticket, settings) if ticket else None
 
 
 def check_in(
-    session: Session, actor: User, *, token: str = "", ticket_id: int | None = None
+    session: Session,
+    actor: User,
+    settings: Settings,
+    *,
+    token: str = "",
+    ticket_id: int | None = None,
 ) -> tuple[ScanTicket | None, bool]:
     """Admit a ticket in one atomic statement.
 
     Returns ``(snapshot, admitted)``. ``admitted`` is False when the row was not
     ``valid`` at the moment the UPDATE ran, so two phones can never both win.
     """
-    conditions = [Ticket.status == TicketStatus.valid]
+    conditions = [
+        Ticket.status == TicketStatus.valid,
+        or_(
+            Ticket.ticket_type == TicketType.full,
+            (Ticket.ticket_type == TicketType.half) & Ticket.balance_paid_at.is_not(None),
+        ),
+    ]
     if ticket_id is not None:
         conditions.append(Ticket.id == ticket_id)
     else:
@@ -102,11 +135,13 @@ def check_in(
     admitted = result.rowcount == 1
     session.commit()
 
-    snapshot = resolve(session, token=token, ticket_id=ticket_id)
+    snapshot = resolve(session, settings, token=token, ticket_id=ticket_id)
     return snapshot, admitted
 
 
-def search_by_name(session: Session, query: str, *, limit: int = MAX_SEARCH_RESULTS):
+def search_by_name(
+    session: Session, settings: Settings, query: str, *, limit: int = MAX_SEARCH_RESULTS
+):
     """Manual fallback when a QR will not scan. Returns snapshots, never tokens."""
     needle = query.strip().lower()
     if not needle:
@@ -117,4 +152,4 @@ def search_by_name(session: Session, query: str, *, limit: int = MAX_SEARCH_RESU
         .order_by(Ticket.name)
         .limit(limit)
     )
-    return [_snapshot(session, ticket) for ticket in session.exec(statement)]
+    return [_snapshot(session, ticket, settings) for ticket in session.exec(statement)]

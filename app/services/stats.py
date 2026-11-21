@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import case
 from sqlmodel import Session, func, select
 
-from app.models import EmailStatus, Role, Ticket, TicketStatus, User
+from app.models import EmailStatus, Role, Ticket, TicketStatus, TicketType, User
 
 
 @dataclass(slots=True)
@@ -59,7 +59,14 @@ def ticket_totals(session: Session, *, issued_by: int | None = None) -> Totals:
     sold = count_tickets(session, issued_by=issued_by) - count_tickets(
         session, TicketStatus.revoked, issued_by=issued_by
     )
-    revenue_statement = select(func.coalesce(func.sum(Ticket.amount_paid), 0)).where(
+    collected = case(
+        (
+            (Ticket.ticket_type == TicketType.half) & Ticket.balance_paid_at.is_not(None),
+            Ticket.total_price,
+        ),
+        else_=Ticket.amount_paid,
+    )
+    revenue_statement = select(func.coalesce(func.sum(collected), 0)).where(
         Ticket.status != TicketStatus.revoked
     )
     failed_statement = (
@@ -89,13 +96,20 @@ def sales_by_staff(session: Session, *, issued_by: int | None = None) -> list[Sa
     admitted_count = func.coalesce(
         func.sum(case((Ticket.status == TicketStatus.checked_in, 1), else_=0)), 0
     )
+    collected = case(
+        (
+            (Ticket.ticket_type == TicketType.half) & Ticket.balance_paid_at.is_not(None),
+            Ticket.total_price,
+        ),
+        else_=Ticket.amount_paid,
+    )
     statement = (
         select(
             User.username,
             User.role,
             func.count(Ticket.id),
             admitted_count,
-            func.coalesce(func.sum(Ticket.amount_paid), 0),
+            func.coalesce(func.sum(collected), 0),
         )
         .join(
             Ticket,

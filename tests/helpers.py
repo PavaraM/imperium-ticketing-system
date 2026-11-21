@@ -24,6 +24,7 @@ def issue_ticket(
     email: str = "guest1@example.com",
     batch: str = "Batch A",
     amount: str = "1500",
+    ticket_type: str = "full",
 ) -> Ticket:
     response = client.post(
         "/tickets",
@@ -32,6 +33,7 @@ def issue_ticket(
             "email": email,
             "whatsapp_number": "0771234567",
             "batch": batch,
+            "ticket_type": ticket_type,
             "amount": amount,
             "bank_reference": reference,
         },

@@ -8,6 +8,8 @@ I built this for our school’s batch party. Ready-made ticketing services were 
 
 The app supports staff issuing tickets to paid guests and checking them in by QR code. The rest of this project focuses on how it is built, deployed, and operated.
 
+Full tickets are paid in full when issued. Half tickets reserve a place with a 50% deposit, but do not allow entry until an admin records the remaining payment. The balance is due seven days before `EVENT_DATETIME`; after that cutoff, recording payment requires explicit admin confirmation. Existing tickets are migrated as paid full tickets when the app starts.
+
 ## DevOps goals
 
 - Build a small Python 3.12 image with locked dependencies and no development packages.
@@ -144,10 +146,12 @@ All settings are environment variables and are documented in `.env.example`.
 | `TRUST_PROXY` | Trust forwarded client IP headers only behind the included trusted proxy. |
 | `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_SECONDS` | In-memory login throttling limits. |
 | `BASE_URL` | Reserved configuration; currently unused by the application. |
-| `EVENT_*`, `CURRENCY` | Event name, date, venue, timezone and currency shown to staff and buyers. |
+| `EVENT_*`, `CURRENCY` | Event name, display date, machine-readable event date/time, venue, timezone and currency. |
 | `MAIL_MODE`, `SMTP_*` | Console or SMTP delivery configuration, including host, port, STARTTLS, credentials and sender details. |
 
 Never commit `.env`, real guest data, database files, exported CSVs, or backups. `.env.example` uses dummy values and should remain safe to share.
+
+`EVENT_DATETIME` must be an ISO 8601 date/time with an offset, for example `2026-12-12T19:00:00+05:30`. Before deploying this schema update to a server with existing tickets, take an SQLite backup using the backup procedure below. Startup applies the additive migration automatically and preserves existing ticket rows.
 
 ### Email with Gmail SMTP
 

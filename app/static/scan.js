@@ -25,6 +25,8 @@
     checked_in: "Already checked in",
     revoked: "Ticket revoked",
     unknown: "Unknown ticket",
+    payment_due: "Balance payment due",
+    payment_overdue: "Balance payment overdue",
   };
 
   const STATE_WORDS = {
@@ -32,6 +34,8 @@
     checked_in: "Checked in",
     revoked: "Revoked",
     unknown: "Unknown",
+    payment_due: "Payment due",
+    payment_overdue: "Payment overdue",
   };
 
   let scanner = null;
@@ -80,6 +84,10 @@
       }
       case "revoked":
         return "Do not admit. Ask the event admin to check this one.";
+      case "payment_due":
+        return "Do not admit. The half-ticket balance of " + data.balance_due_display + " is due before the event cutoff.";
+      case "payment_overdue":
+        return "Do not admit. The balance is overdue; only an admin can record a late payment.";
       default:
         return "No ticket matches this code. Try the manual search below.";
     }

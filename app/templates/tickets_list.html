@@ -42,11 +42,20 @@
             <span class="ticket-main">
               <span class="ticket-name">{{ ticket.name }}</span>
               <span class="ticket-meta">
-                {{ ticket.batch or "No batch" }} · {{ currency }} {{ ticket.amount_paid | money }}
+                {{ ticket.batch or "No batch" }} · {{ ticket.ticket_type.value | title }} ·
+                {{ currency }} {{ ticket.amount_paid | money }} paid
+                {% if ticket.ticket_type.value == "half" and not ticket.balance_paid_at %}
+                  · {{ currency }} {{ (ticket.total_price - ticket.amount_paid) | money }}
+                  {% if payment_overdue %}overdue{% else %}balance due{% endif %}
+                {% endif %}
               </span>
             </span>
-            <span class="badge badge-{{ ticket.status.value }}">
-              {{ ticket.status.value | replace("_", " ") }}
+            <span class="badge badge-{% if ticket.ticket_type.value == 'half' and not ticket.balance_paid_at %}payment_due{% else %}{{ ticket.status.value }}{% endif %}">
+              {% if ticket.ticket_type.value == "half" and not ticket.balance_paid_at %}
+                {% if payment_overdue %}payment overdue{% else %}payment due{% endif %}
+              {% else %}
+                {{ ticket.status.value | replace("_", " ") }}
+              {% endif %}
             </span>
           </a>
         </li>

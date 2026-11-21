@@ -5,7 +5,7 @@
 {% block content %}
   <p class="crumb"><a href="/tickets">← All tickets</a></p>
   <h1>New ticket</h1>
-  <p class="lede">Only for a guest who has already paid by bank transfer.</p>
+  <p class="lede">Issue a full ticket after full payment, or reserve a half ticket with a 50% deposit.</p>
 
   {% if errors %}
     <div class="alert" role="alert">
@@ -37,10 +37,18 @@
              placeholder="e.g. 2026 A/L Commerce">
     </label>
 
-    <label for="amount">Amount paid ({{ currency }})
+    <label for="ticket_type">Ticket type
+      <select id="ticket_type" name="ticket_type">
+        <option value="full" {% if form.get('ticket_type', 'full') == 'full' %}selected{% endif %}>Full ticket · paid in full</option>
+        <option value="half" {% if form.get('ticket_type') == 'half' %}selected{% endif %}>Half ticket · 50% deposit, balance due 7 days before event</option>
+      </select>
+    </label>
+
+    <label for="amount">Full ticket price ({{ currency }})
       <input id="amount" name="amount" value="{{ form.get('amount', '') }}" required
              inputmode="decimal" placeholder="e.g. 1500">
     </label>
+    <p class="muted">A full ticket collects the full price now. A half ticket collects half now and blocks entry until the balance is recorded.</p>
 
     <label for="bank_reference">Bank reference
       <input id="bank_reference" name="bank_reference" value="{{ form.get('bank_reference', '') }}"

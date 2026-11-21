@@ -10,7 +10,19 @@ from app.services.scan import check_in
 from app.services.users import create_ticketer
 from tests.helpers import fresh, issue_ticket, issue_ticket_as
 
-STATE_KEYS = {"state", "ticket_id", "name", "batch", "checked_in_at", "checked_in_by"}
+STATE_KEYS = {
+    "state",
+    "ticket_id",
+    "name",
+    "batch",
+    "ticket_type",
+    "amount_paid",
+    "total_price",
+    "balance_due",
+    "balance_due_display",
+    "checked_in_at",
+    "checked_in_by",
+}
 
 
 def admin_id(session: Session) -> int:
@@ -161,10 +173,14 @@ def test_stale_session_cannot_double_admit(admin_client: TestClient, session: Se
         stale.get(Ticket, ticket_id)  # loads status=valid into the identity map
         winner = fresh(session, User, admin_id(session))
         with Session(admin_client.app.state.engine) as other:
-            _, won = check_in(other, other.get(User, winner.id), token=token)
+            _, won = check_in(
+                other, other.get(User, winner.id), admin_client.app.state.settings, token=token
+            )
         assert won is True
 
-        snapshot, admitted = check_in(stale, stale.get(User, winner.id), token=token)
+        snapshot, admitted = check_in(
+            stale, stale.get(User, winner.id), admin_client.app.state.settings, token=token
+        )
 
     assert admitted is False
     assert snapshot is not None

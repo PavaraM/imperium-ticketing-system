@@ -1,3 +1,4 @@
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -26,6 +27,7 @@ class Settings(BaseSettings):
 
     event_name: str = "School Party"
     event_date: str = "TBA"
+    event_datetime: datetime = datetime.fromisoformat("2026-12-12T19:00:00+05:30")
     event_venue: str = "TBA"
     event_timezone: str = "Asia/Colombo"
     currency: str = "LKR"

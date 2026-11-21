@@ -578,6 +578,12 @@ select:focus-visible {
   color: #6b4a0c;
 }
 
+.badge-payment_due,
+.badge-payment_overdue {
+  background: #fbe3e1;
+  color: #8c1c15;
+}
+
 /* ---------- Ticket detail ---------- */
 
 .detail-grid {

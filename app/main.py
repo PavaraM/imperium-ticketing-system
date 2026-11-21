@@ -9,6 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import Settings, get_settings
 from app.db import create_db_engine
+from app.migrations.ticket_payments import migrate_ticket_payments
 from app.ratelimit import LoginRateLimiter
 from app.routers import admin, auth, pages, scan, tickets
 from app.security import origin_guard
@@ -26,6 +27,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):  # noqa: ARG001
         SQLModel.metadata.create_all(engine)
+        migrate_ticket_payments(engine)
         with Session(engine) as session:
             seed_admin(session, settings)
         yield

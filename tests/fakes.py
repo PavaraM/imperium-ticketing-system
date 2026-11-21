@@ -21,7 +21,18 @@ class FakeMailer:
     fail: bool = False
     error: Exception = field(default_factory=lambda: RuntimeError("mail transport down"))
 
-    def send_ticket(self, *, to: str, guest_name: str, ticket_id: int, qr_png: bytes) -> None:
+    def send_ticket(
+        self,
+        *,
+        to: str,
+        guest_name: str,
+        ticket_id: int,
+        qr_png: bytes,
+        ticket_type: str = "full",
+        amount_paid: int = 0,
+        total_price: int = 0,
+        balance_paid: bool = False,
+    ) -> None:
         if self.fail:
             raise self.error
         self.sent.append(

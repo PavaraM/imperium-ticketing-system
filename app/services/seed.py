@@ -11,6 +11,7 @@ from sqlmodel import Session, SQLModel, select
 
 from app.config import Settings
 from app.db import create_db_engine
+from app.migrations.ticket_payments import migrate_ticket_payments
 from app.models import EmailStatus, Ticket, TicketStatus, User
 from app.services.users import create_ticketer, get_by_username, seed_admin
 
@@ -74,6 +75,7 @@ def seed_demo_data(
 
     engine = create_db_engine(settings)
     SQLModel.metadata.create_all(engine)
+    migrate_ticket_payments(engine)
     created = 0
     skipped = 0
     staff_names: list[str] = []
@@ -117,6 +119,7 @@ def seed_demo_data(
                     checked_in_at = now - timedelta(minutes=(count - index) * 3)
                     checked_in_by = staff[index % len(staff)].id
 
+                amount = AMOUNTS[index % len(AMOUNTS)] * 100
                 session.add(
                     Ticket(
                         token=secrets.token_urlsafe(32),
@@ -127,7 +130,8 @@ def seed_demo_data(
                         email=f"guest{index:02d}@example.com",
                         whatsapp_number=f"077{1000000 + index:07d}",
                         batch=None if index % 9 == 0 else BATCHES[index % len(BATCHES)],
-                        amount_paid=AMOUNTS[index % len(AMOUNTS)] * 100,
+                        amount_paid=amount,
+                        total_price=amount,
                         bank_reference=reference,
                         status=status,
                         issued_by=staff[index % len(staff)].id or admin.id or 0,

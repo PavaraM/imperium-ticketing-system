@@ -11,6 +11,7 @@ from html import escape
 from typing import Protocol
 
 from app.config import Settings
+from app.services.tickets import event_payment_deadline
 
 logger = logging.getLogger("app.mail")
 
@@ -20,7 +21,18 @@ class MailerError(RuntimeError):
 
 
 class Mailer(Protocol):
-    def send_ticket(self, *, to: str, guest_name: str, ticket_id: int, qr_png: bytes) -> None: ...
+    def send_ticket(
+        self,
+        *,
+        to: str,
+        guest_name: str,
+        ticket_id: int,
+        qr_png: bytes,
+        ticket_type: str = "full",
+        amount_paid: int = 0,
+        total_price: int = 0,
+        balance_paid: bool = False,
+    ) -> None: ...
 
 
 def _qr_cid(ticket_id: int) -> str:
@@ -34,6 +46,10 @@ def build_ticket_message(
     guest_name: str,
     ticket_id: int,
     qr_png: bytes,
+    ticket_type: str = "full",
+    amount_paid: int = 0,
+    total_price: int = 0,
+    balance_paid: bool = False,
 ) -> EmailMessage:
     """Build the guest email with the QR both inline and attached."""
     subject = f"Your ticket for {settings.event_name}"
@@ -42,14 +58,39 @@ def build_ticket_message(
     safe_date = escape(settings.event_date)
     safe_venue = escape(settings.event_venue)
     cid = _qr_cid(ticket_id)
+    if ticket_type == "half" and balance_paid:
+        payment_text = (
+            "Your half ticket is fully paid. Show the QR at the door. "
+            "It admits one guest and can only be used once."
+        )
+        payment_html = payment_text
+    elif ticket_type == "half":
+        deadline = event_payment_deadline(settings).strftime("%d %b %Y, %H:%M %Z")
+        balance = (total_price - amount_paid) / 100
+        payment_text = (
+            "This half ticket reserves your place only and does not grant entry. "
+            f"Pay the remaining {settings.currency} {balance:,.2f} by {deadline}. "
+            "Entry is allowed after staff record the balance payment."
+        )
+        payment_html = (
+            "This half ticket reserves your place only and does not grant entry. "
+            f"Pay the remaining {escape(settings.currency)} {balance:,.2f} by "
+            f"{escape(deadline)}. Entry is allowed after staff record the balance payment."
+        )
+    else:
+        payment_text = (
+            "Your full ticket is paid. Show the QR at the door. "
+            "It admits one guest and can only be used once."
+        )
+        payment_html = payment_text
 
     text = (
         f"Hi {guest_name},\n\n"
         f"You are on the list for {settings.event_name}.\n\n"
         f"When: {settings.event_date}\n"
         f"Where: {settings.event_venue}\n\n"
-        "Your QR ticket is attached to this email. Show it at the door.\n"
-        "It admits one guest and can only be used once.\n"
+        "Your QR ticket is attached to this email.\n"
+        f"{payment_text}\n"
     )
 
     html = f"""\
@@ -128,8 +169,7 @@ def build_ticket_message(
             </tr>
             <tr>
               <td style="padding:18px 28px 28px;color:#52635e;font-size:14px;line-height:1.6;">
-                <p style="margin:0;">Your QR ticket is attached to this email. Show it at the
-                   door. It admits one guest and can only be used once.</p>
+                <p style="margin:0;">Your QR ticket is attached to this email. {payment_html}</p>
               </td>
             </tr>
           </table>
@@ -163,9 +203,28 @@ class SmtpMailer:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
 
-    def send_ticket(self, *, to: str, guest_name: str, ticket_id: int, qr_png: bytes) -> None:
+    def send_ticket(
+        self,
+        *,
+        to: str,
+        guest_name: str,
+        ticket_id: int,
+        qr_png: bytes,
+        ticket_type: str = "full",
+        amount_paid: int = 0,
+        total_price: int = 0,
+        balance_paid: bool = False,
+    ) -> None:
         message = build_ticket_message(
-            self._settings, to=to, guest_name=guest_name, ticket_id=ticket_id, qr_png=qr_png
+            self._settings,
+            to=to,
+            guest_name=guest_name,
+            ticket_id=ticket_id,
+            qr_png=qr_png,
+            ticket_type=ticket_type,
+            amount_paid=amount_paid,
+            total_price=total_price,
+            balance_paid=balance_paid,
         )
         try:
             with smtplib.SMTP(
@@ -187,9 +246,28 @@ class ConsoleMailer:
         self._settings = settings
         self._outbox = settings.db_path.parent / "outbox"
 
-    def send_ticket(self, *, to: str, guest_name: str, ticket_id: int, qr_png: bytes) -> None:
+    def send_ticket(
+        self,
+        *,
+        to: str,
+        guest_name: str,
+        ticket_id: int,
+        qr_png: bytes,
+        ticket_type: str = "full",
+        amount_paid: int = 0,
+        total_price: int = 0,
+        balance_paid: bool = False,
+    ) -> None:
         message = build_ticket_message(
-            self._settings, to=to, guest_name=guest_name, ticket_id=ticket_id, qr_png=qr_png
+            self._settings,
+            to=to,
+            guest_name=guest_name,
+            ticket_id=ticket_id,
+            qr_png=qr_png,
+            ticket_type=ticket_type,
+            amount_paid=amount_paid,
+            total_price=total_price,
+            balance_paid=balance_paid,
         )
         self._outbox.mkdir(parents=True, exist_ok=True)
         path = self._outbox / f"ticket-{ticket_id}.eml"

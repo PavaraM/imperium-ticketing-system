@@ -17,8 +17,10 @@ from app.services.tickets import (
     TicketValidationError,
     all_tickets,
     create_ticket,
+    event_payment_deadline,
     get_ticket,
     parse_ticket_input,
+    record_balance_payment,
     revoke_ticket,
     search_tickets,
 )
@@ -60,6 +62,8 @@ def list_tickets(
         ),
         q=q,
         email=email_filter.value if email_filter else "",
+        payment_overdue=datetime.now(UTC)
+        > event_payment_deadline(request.app.state.settings).astimezone(UTC),
     )
 
 
@@ -74,7 +78,11 @@ CSV_COLUMNS = (
     "Email",
     "WhatsApp",
     "Batch",
-    "Amount",
+    "Ticket type",
+    "Ticket price",
+    "Amount paid",
+    "Balance due",
+    "Balance bank reference",
     "Currency",
     "Bank reference",
     "Status",
@@ -116,7 +124,13 @@ def export_tickets_csv(request: Request, user: AdminDep, session: SessionDep) ->
                 _spreadsheet_safe(ticket.email),
                 _spreadsheet_safe(ticket.whatsapp_number),
                 _spreadsheet_safe(ticket.batch or ""),
+                ticket.ticket_type.value,
+                f"{ticket.total_price / 100:.2f}",
                 f"{ticket.amount_paid / 100:.2f}",
+                f"{max(0, ticket.total_price - ticket.amount_paid) / 100:.2f}"
+                if ticket.ticket_type.value == "half" and ticket.balance_paid_at is None
+                else "0.00",
+                _spreadsheet_safe(ticket.balance_payment_reference or ""),
                 settings.currency,
                 _spreadsheet_safe(ticket.bank_reference),
                 ticket.status.value,
@@ -194,7 +208,47 @@ def ticket_detail(ticket_id: int, request: Request, user: UserDep, session: Sess
         ticket=ticket,
         issuer=session.get(User, ticket.issued_by),
         checker=session.get(User, ticket.checked_in_by) if ticket.checked_in_by else None,
+        balance_payment_user=session.get(User, ticket.balance_paid_by)
+        if ticket.balance_paid_by
+        else None,
+        payment_deadline=event_payment_deadline(request.app.state.settings),
+        payment_overdue=datetime.now(UTC)
+        > event_payment_deadline(request.app.state.settings).astimezone(UTC),
     )
+
+
+@router.post("/{ticket_id}/balance")
+async def pay_ticket_balance(
+    ticket_id: int,
+    request: Request,
+    user: AdminDep,
+    session: SessionDep,
+):
+    ticket = get_ticket(session, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    form = await request.form()
+    result = record_balance_payment(
+        session,
+        ticket,
+        user,
+        str(form.get("bank_reference", "")),
+        settings=request.app.state.settings,
+        confirm_late=str(form.get("confirm_late", "")) == "yes",
+    )
+    messages = {
+        "paid": "Balance payment recorded.",
+        "paid_late": "Late balance payment recorded with admin confirmation.",
+        "not_half": "Only half tickets have a balance payment.",
+        "already_paid": "This ticket balance is already paid.",
+        "invalid_reference": "Enter a bank reference between 3 and 80 characters.",
+        "duplicate_reference": "That bank reference is already attached to a payment.",
+        "late_confirmation_required": (
+            "This payment is overdue. Confirm the late payment to continue."
+        ),
+    }
+    add_flash(request, messages[result])
+    return RedirectResponse(f"/tickets/{ticket_id}", status_code=303)
 
 
 @router.get("/{ticket_id}/qr.png")

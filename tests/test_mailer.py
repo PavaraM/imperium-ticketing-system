@@ -34,6 +34,24 @@ def test_message_carries_event_details(settings):
     assert "Town Hall" in body
 
 
+def test_half_ticket_email_explains_reservation_and_balance_deadline(settings):
+    message = build_ticket_message(
+        settings,
+        to="guest@example.com",
+        guest_name="Test Guest",
+        ticket_id=8,
+        qr_png=QR_PNG,
+        ticket_type="half",
+        amount_paid=75_000,
+        total_price=150_000,
+    )
+    body = message.get_body(preferencelist=("plain",)).get_content()
+
+    assert "reserves your place only and does not grant entry" in body
+    assert "LKR 750.00" in body
+    assert "by 05 Dec 2026, 19:00 +0530" in body
+
+
 def test_html_message_is_responsive_and_escapes_dynamic_content(settings):
     customized = settings.model_copy(
         update={
