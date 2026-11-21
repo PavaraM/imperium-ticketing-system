@@ -8,7 +8,7 @@ I built this for our school’s batch party. Ready-made ticketing services were 
 
 The app supports staff issuing tickets to paid guests and checking them in by QR code. The rest of this project focuses on how it is built, deployed, and operated.
 
-Full tickets are paid in full when issued. Half tickets reserve a place with a 50% deposit, but do not allow entry until an admin records the remaining payment. The balance is due seven days before `EVENT_DATETIME`; after that cutoff, recording payment requires explicit admin confirmation. Existing tickets are migrated as paid full tickets when the app starts.
+Full tickets are paid in full when issued and receive one ticket email. Half tickets reserve a place with a 50% deposit and receive a QR-free reservation notice; they do not allow entry until an admin records the remaining payment. The balance is due seven days before `EVENT_DATETIME`; after that cutoff, recording payment requires explicit admin confirmation. Once fully paid, the guest receives the entry ticket email. Existing tickets are migrated as paid full tickets when the app starts.
 
 ## DevOps goals
 

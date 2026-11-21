@@ -19,7 +19,10 @@ def test_legacy_tickets_migrate_as_paid_full_tickets(tmp_path):
 
     with engine.connect() as connection:
         row = connection.execute(
-            text("SELECT amount_paid, total_price, ticket_type FROM tickets WHERE id = 1")
+            text(
+                "SELECT amount_paid, total_price, ticket_type, reservation_email_status "
+                "FROM tickets WHERE id = 1"
+            )
         ).one()
-    assert row == (150000, 150000, "full")
+    assert row == (150000, 150000, "full", None)
     engine.dispose()

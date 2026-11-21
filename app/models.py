@@ -78,3 +78,4 @@ class Ticket(SQLModel, table=True):
     checked_in_at: datetime | None = Field(default=None)
     checked_in_by: int | None = Field(default=None, foreign_key="users.id")
     email_status: EmailStatus = Field(default=EmailStatus.pending)
+    reservation_email_status: EmailStatus | None = Field(default=None)

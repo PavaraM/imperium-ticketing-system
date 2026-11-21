@@ -21,6 +21,16 @@ class MailerError(RuntimeError):
 
 
 class Mailer(Protocol):
+    def send_reservation(
+        self,
+        *,
+        to: str,
+        guest_name: str,
+        ticket_id: int,
+        total_price: int,
+        amount_paid: int,
+    ) -> None: ...
+
     def send_ticket(
         self,
         *,
@@ -37,6 +47,65 @@ class Mailer(Protocol):
 
 def _qr_cid(ticket_id: int) -> str:
     return f"ticket-qr-{ticket_id}@imperium"
+
+
+def build_reservation_message(
+    settings: Settings,
+    *,
+    to: str,
+    guest_name: str,
+    total_price: int,
+    amount_paid: int,
+) -> EmailMessage:
+    """Build a QR-free notice confirming a half-ticket reservation."""
+    safe_name = escape(guest_name)
+    safe_event = escape(settings.event_name)
+    safe_date = escape(settings.event_date)
+    safe_venue = escape(settings.event_venue)
+    safe_currency = escape(settings.currency)
+    balance = (total_price - amount_paid) / 100
+    deadline = event_payment_deadline(settings).strftime("%d %b %Y, %H:%M %Z")
+    subject = f"Seat reserved for {settings.event_name}"
+    payment_details = (
+        f"Deposit received: {settings.currency} {amount_paid / 100:,.2f}\n"
+        f"Remaining balance: {settings.currency} {balance:,.2f}\n"
+        f"Pay by: {deadline}\n"
+    )
+    text = (
+        f"Hi {guest_name},\n\n"
+        f"Your seat for {settings.event_name} is reserved.\n"
+        "This confirmation is not an entry ticket. We will email your ticket and entry QR "
+        "after staff record your full payment.\n\n"
+        f"When: {settings.event_date}\n"
+        f"Where: {settings.event_venue}\n\n"
+        f"{payment_details}"
+    )
+    html = f"""\
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport"
+content="width=device-width, initial-scale=1"></head>
+<body style="margin:0;padding:24px 12px;background:#f3f7f5;color:#192522;
+font-family:Arial,Helvetica,sans-serif;line-height:1.6">
+  <main style="max-width:560px;margin:auto;padding:28px;background:#fff;
+border:1px solid #dce6e1;border-radius:16px">
+    <h1 style="margin-top:0">Seat reserved</h1>
+    <p>Hi {safe_name}, your seat for <strong>{safe_event}</strong> is reserved.</p>
+    <p><strong>This confirmation is not an entry ticket.</strong> We will email your ticket
+    and entry QR after staff record your full payment.</p>
+    <p><strong>When:</strong> {safe_date}<br><strong>Where:</strong> {safe_venue}</p>
+    <p><strong>Deposit received:</strong> {safe_currency} {amount_paid / 100:,.2f}<br>
+    <strong>Remaining balance:</strong> {safe_currency} {balance:,.2f}<br>
+    <strong>Pay by:</strong> {escape(deadline)}</p>
+  </main>
+</body></html>
+"""
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = formataddr((settings.smtp_from_name, settings.smtp_from_email))
+    message["To"] = to
+    message.set_content(text)
+    message.add_alternative(html, subtype="html")
+    return message
 
 
 def build_ticket_message(
@@ -203,6 +272,24 @@ class SmtpMailer:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
 
+    def send_reservation(
+        self,
+        *,
+        to: str,
+        guest_name: str,
+        ticket_id: int,
+        total_price: int,
+        amount_paid: int,
+    ) -> None:
+        message = build_reservation_message(
+            self._settings,
+            to=to,
+            guest_name=guest_name,
+            total_price=total_price,
+            amount_paid=amount_paid,
+        )
+        self._send(message)
+
     def send_ticket(
         self,
         *,
@@ -226,6 +313,9 @@ class SmtpMailer:
             total_price=total_price,
             balance_paid=balance_paid,
         )
+        self._send(message)
+
+    def _send(self, message: EmailMessage) -> None:
         try:
             with smtplib.SMTP(
                 self._settings.smtp_host, self._settings.smtp_port, timeout=20
@@ -246,6 +336,24 @@ class ConsoleMailer:
         self._settings = settings
         self._outbox = settings.db_path.parent / "outbox"
 
+    def send_reservation(
+        self,
+        *,
+        to: str,
+        guest_name: str,
+        ticket_id: int,
+        total_price: int,
+        amount_paid: int,
+    ) -> None:
+        message = build_reservation_message(
+            self._settings,
+            to=to,
+            guest_name=guest_name,
+            total_price=total_price,
+            amount_paid=amount_paid,
+        )
+        self._write(message, f"reservation-{ticket_id}")
+
     def send_ticket(
         self,
         *,
@@ -269,8 +377,11 @@ class ConsoleMailer:
             total_price=total_price,
             balance_paid=balance_paid,
         )
+        self._write(message, f"ticket-{ticket_id}")
+
+    def _write(self, message: EmailMessage, filename: str) -> None:
         self._outbox.mkdir(parents=True, exist_ok=True)
-        path = self._outbox / f"ticket-{ticket_id}.eml"
+        path = self._outbox / f"{filename}.eml"
         path.write_bytes(message.as_bytes())
         logger.info("ticket email written to %s", path)
 

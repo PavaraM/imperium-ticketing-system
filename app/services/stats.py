@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import case
+from sqlalchemy import case, or_
 from sqlmodel import Session, func, select
 
 from app.models import EmailStatus, Role, Ticket, TicketStatus, TicketType, User
@@ -73,7 +73,10 @@ def ticket_totals(session: Session, *, issued_by: int | None = None) -> Totals:
         select(func.count())
         .select_from(Ticket)
         .where(
-            Ticket.email_status == EmailStatus.failed,
+            or_(
+                Ticket.email_status == EmailStatus.failed,
+                Ticket.reservation_email_status == EmailStatus.failed,
+            ),
             Ticket.status != TicketStatus.revoked,
         )
     )

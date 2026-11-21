@@ -174,6 +174,9 @@ def create_ticket(session: Session, data: TicketInput, *, issued_by: int) -> Tic
             bank_reference=reference,
             status=TicketStatus.valid,
             email_status=EmailStatus.pending,
+            reservation_email_status=(
+                EmailStatus.pending if data.ticket_type is TicketType.half else None
+            ),
             issued_by=issued_by,
         )
         session.add(ticket)
@@ -315,7 +318,15 @@ def search_tickets(
             )
         )
     if email_status is not None:
-        statement = statement.where(Ticket.email_status == email_status)
+        if email_status is EmailStatus.failed:
+            statement = statement.where(
+                or_(
+                    Ticket.email_status == email_status,
+                    Ticket.reservation_email_status == email_status,
+                )
+            )
+        else:
+            statement = statement.where(Ticket.email_status == email_status)
     statement = statement.order_by(Ticket.created_at.desc(), Ticket.id.desc()).limit(limit)
     return list(session.exec(statement).all())
 

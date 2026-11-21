@@ -8,8 +8,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlmodel import select
 
 from app.deps import AdminDep, SessionDep, UserDep
-from app.models import EmailStatus, Role, Ticket, User
-from app.services.delivery import deliver_ticket_email
+from app.models import EmailStatus, Role, Ticket, TicketType, User
+from app.services.delivery import deliver_reservation_email, deliver_ticket_email
 from app.services.qr import render_qr_png
 from app.services.tickets import (
     FORM_FIELDS,
@@ -90,7 +90,8 @@ CSV_COLUMNS = (
     "Created at",
     "Checked in at",
     "Checked in by",
-    "Email status",
+    "Ticket email status",
+    "Reservation email status",
 )
 
 
@@ -143,6 +144,7 @@ def export_tickets_csv(request: Request, user: AdminDep, session: SessionDep) ->
                 ),
                 staff.get(ticket.checked_in_by or 0, ""),
                 ticket.email_status.value,
+                ticket.reservation_email_status.value if ticket.reservation_email_status else "",
             ]
         )
 
@@ -189,10 +191,16 @@ async def create_ticket_view(
             status_code=400,
         )
 
-    background.add_task(
-        deliver_ticket_email, request.app.state.engine, request.app.state.mailer, ticket.id
-    )
-    add_flash(request, f"Ticket for {ticket.name} created. Email queued.")
+    if ticket.ticket_type is TicketType.half:
+        background.add_task(
+            deliver_reservation_email, request.app.state.engine, request.app.state.mailer, ticket.id
+        )
+        add_flash(request, f"Seat reserved for {ticket.name}. Reservation email queued.")
+    else:
+        background.add_task(
+            deliver_ticket_email, request.app.state.engine, request.app.state.mailer, ticket.id
+        )
+        add_flash(request, f"Ticket for {ticket.name} created. Email queued.")
     return RedirectResponse(f"/tickets/{ticket.id}", status_code=303)
 
 
@@ -223,6 +231,7 @@ async def pay_ticket_balance(
     request: Request,
     user: AdminDep,
     session: SessionDep,
+    background: BackgroundTasks,
 ):
     ticket = get_ticket(session, ticket_id)
     if ticket is None:
@@ -236,6 +245,13 @@ async def pay_ticket_balance(
         settings=request.app.state.settings,
         confirm_late=str(form.get("confirm_late", "")) == "yes",
     )
+    if result in {"paid", "paid_late"}:
+        ticket.email_status = EmailStatus.pending
+        session.add(ticket)
+        session.commit()
+        background.add_task(
+            deliver_ticket_email, request.app.state.engine, request.app.state.mailer, ticket_id
+        )
     messages = {
         "paid": "Balance payment recorded.",
         "paid_late": "Late balance payment recorded with admin confirmation.",
@@ -247,7 +263,10 @@ async def pay_ticket_balance(
             "This payment is overdue. Confirm the late payment to continue."
         ),
     }
-    add_flash(request, messages[result])
+    if result in {"paid", "paid_late"}:
+        add_flash(request, f"{messages[result]} Ticket email queued.")
+    else:
+        add_flash(request, messages[result])
     return RedirectResponse(f"/tickets/{ticket_id}", status_code=303)
 
 
@@ -275,14 +294,24 @@ def resend_ticket_email(
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    ticket.email_status = EmailStatus.pending
+    reservation_only = ticket.ticket_type is TicketType.half and ticket.balance_paid_at is None
+    if reservation_only:
+        ticket.reservation_email_status = EmailStatus.pending
+    else:
+        ticket.email_status = EmailStatus.pending
     session.add(ticket)
     session.commit()
 
-    background.add_task(
-        deliver_ticket_email, request.app.state.engine, request.app.state.mailer, ticket.id
-    )
-    add_flash(request, "Email queued. The same ticket QR will be sent again.")
+    if reservation_only:
+        background.add_task(
+            deliver_reservation_email, request.app.state.engine, request.app.state.mailer, ticket.id
+        )
+        add_flash(request, "Reservation email queued. No entry QR is sent until full payment.")
+    else:
+        background.add_task(
+            deliver_ticket_email, request.app.state.engine, request.app.state.mailer, ticket.id
+        )
+        add_flash(request, "Ticket email queued. The same ticket QR will be sent again.")
     return RedirectResponse(f"/tickets/{ticket.id}", status_code=303)
 
 

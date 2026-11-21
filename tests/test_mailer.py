@@ -4,12 +4,32 @@ from app.services.mailer import (
     ConsoleMailer,
     MailerError,
     SmtpMailer,
+    build_reservation_message,
     build_ticket_message,
     get_mailer,
 )
 from app.services.qr import render_qr_png
 
 QR_PNG = render_qr_png("test-token-value-for-mailer")
+
+
+def test_reservation_email_confirms_seat_without_qr(settings):
+    message = build_reservation_message(
+        settings,
+        to="guest@example.com",
+        guest_name="Test Guest",
+        total_price=150_000,
+        amount_paid=75_000,
+    )
+    body = message.get_body(preferencelist=("plain",)).get_content()
+
+    assert message["Subject"] == "Seat reserved for Test Party"
+    assert "Your seat for Test Party is reserved." in body
+    assert "not an entry ticket" in body
+    assert "Remaining balance: LKR 750.00" in body
+    assert "Pay by: 05 Dec 2026, 19:00 +0530" in body
+    assert len(message.get_payload()) == 2
+    assert all(part.get_content_type() != "image/png" for part in message.walk())
 
 
 def message_for(settings, **overrides):

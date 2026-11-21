@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from app.models import Ticket, TicketType
+from app.models import EmailStatus, Ticket, TicketType
 from tests.conftest import TICKETER_PASSWORD, TICKETER_USERNAME, login
 from tests.helpers import fresh, issue_ticket
 
@@ -22,6 +22,11 @@ def test_half_ticket_reserves_spot_but_cannot_enter(admin_client, session, app, 
     assert ticket.ticket_type is TicketType.half
     assert ticket.total_price == 200_000
     assert ticket.amount_paid == 100_000
+    assert len(mailer.sent) == 1
+    assert mailer.sent[0].email_type == "reservation"
+    assert mailer.sent[0].qr_png is None
+    assert ticket.reservation_email_status is EmailStatus.sent
+    assert ticket.email_status is EmailStatus.pending
 
     lookup = admin_client.post("/api/scan/lookup", json={"token": ticket.token})
     assert lookup.json()["state"] == "payment_due"
@@ -47,11 +52,27 @@ def test_admin_records_balance_then_scanner_admits(admin_client, session, app, m
     assert updated.balance_payment_reference == "BALANCE-0002"
     assert updated.balance_paid_at is not None
     assert updated.balance_paid_by is not None
+    assert [email.email_type for email in mailer.sent] == ["reservation", "ticket"]
+    assert mailer.sent[1].ticket_id == ticket.id
+    assert mailer.sent[1].qr_png is not None
+    assert fresh(session, Ticket, ticket.id or 0).email_status is EmailStatus.sent
 
     lookup = admin_client.post("/api/scan/lookup", json={"token": ticket.token})
     assert lookup.json()["state"] == "valid"
     assert lookup.json()["balance_due"] == 0
     assert admin_client.post("/api/scan/checkin", json={"token": ticket.token}).status_code == 200
+
+
+def test_reservation_email_failure_does_not_remove_half_ticket(admin_client, session, app, mailer):
+    _set_event(app, "2099-12-12T19:00:00+05:30")
+    mailer.fail = True
+    ticket = issue_ticket(
+        admin_client, session, ticket_type="half", amount="2000", reference="HALF-RESFAIL"
+    )
+
+    assert ticket.id is not None
+    assert fresh(session, Ticket, ticket.id).reservation_email_status is EmailStatus.failed
+    assert fresh(session, Ticket, ticket.id).email_status is EmailStatus.pending
 
 
 def test_overdue_payment_needs_explicit_admin_confirmation(admin_client, session, app, mailer):
@@ -79,6 +100,58 @@ def test_overdue_payment_needs_explicit_admin_confirmation(admin_client, session
     )
     assert confirmed.status_code == 303
     assert fresh(session, Ticket, ticket.id or 0).balance_paid_at is not None
+
+
+def test_resend_uses_reservation_or_ticket_email_for_current_payment_state(
+    admin_client, session, app, mailer
+):
+    _set_event(app, "2099-12-12T19:00:00+05:30")
+    ticket = issue_ticket(
+        admin_client, session, ticket_type="half", amount="2000", reference="HALF-RESEND"
+    )
+
+    first_resend = admin_client.post(f"/tickets/{ticket.id}/resend", follow_redirects=False)
+    assert first_resend.status_code == 303
+    assert mailer.sent[-1].email_type == "reservation"
+    assert mailer.sent[-1].qr_png is None
+
+    payment = admin_client.post(
+        f"/tickets/{ticket.id}/balance",
+        data={"bank_reference": "BALANCE-RESEND"},
+        follow_redirects=False,
+    )
+    assert payment.status_code == 303
+    sent_ticket = mailer.sent[-1]
+    assert sent_ticket.email_type == "ticket"
+
+    second_resend = admin_client.post(f"/tickets/{ticket.id}/resend", follow_redirects=False)
+    assert second_resend.status_code == 303
+    assert mailer.sent[-1].email_type == "ticket"
+    assert mailer.sent[-1].qr_png == sent_ticket.qr_png
+
+
+def test_ticket_email_failure_does_not_reverse_payment_or_block_entry(
+    admin_client, session, app, mailer
+):
+    _set_event(app, "2099-12-12T19:00:00+05:30")
+    ticket = issue_ticket(
+        admin_client, session, ticket_type="half", amount="2000", reference="HALF-MAILFAIL"
+    )
+    mailer.fail = True
+
+    payment = admin_client.post(
+        f"/tickets/{ticket.id}/balance",
+        data={"bank_reference": "BALANCE-MAILFAIL"},
+        follow_redirects=False,
+    )
+    assert payment.status_code == 303
+    refreshed = fresh(session, Ticket, ticket.id or 0)
+    assert refreshed.balance_paid_at is not None
+    assert refreshed.email_status is EmailStatus.failed
+    assert (
+        admin_client.post("/api/scan/lookup", json={"token": ticket.token}).json()["state"]
+        == "valid"
+    )
 
 
 def test_balance_payment_is_admin_only(admin_client, anon_client, session, app, mailer):

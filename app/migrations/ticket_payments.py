@@ -12,6 +12,7 @@ def migrate_ticket_payments(engine: Engine) -> None:
         "balance_payment_reference": "VARCHAR",
         "balance_paid_at": "DATETIME",
         "balance_paid_by": "INTEGER REFERENCES users(id)",
+        "reservation_email_status": "VARCHAR",
     }
     with engine.begin() as connection:
         for name, definition in additions.items():

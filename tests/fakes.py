@@ -10,7 +10,8 @@ class SentEmail:
     to: str
     guest_name: str
     ticket_id: int
-    qr_png: bytes
+    qr_png: bytes | None
+    email_type: str = "ticket"
 
 
 @dataclass
@@ -20,6 +21,27 @@ class FakeMailer:
     sent: list[SentEmail] = field(default_factory=list)
     fail: bool = False
     error: Exception = field(default_factory=lambda: RuntimeError("mail transport down"))
+
+    def send_reservation(
+        self,
+        *,
+        to: str,
+        guest_name: str,
+        ticket_id: int,
+        total_price: int,
+        amount_paid: int,
+    ) -> None:
+        if self.fail:
+            raise self.error
+        self.sent.append(
+            SentEmail(
+                to=to,
+                guest_name=guest_name,
+                ticket_id=ticket_id,
+                qr_png=None,
+                email_type="reservation",
+            )
+        )
 
     def send_ticket(
         self,
@@ -36,5 +58,11 @@ class FakeMailer:
         if self.fail:
             raise self.error
         self.sent.append(
-            SentEmail(to=to, guest_name=guest_name, ticket_id=ticket_id, qr_png=qr_png)
+            SentEmail(
+                to=to,
+                guest_name=guest_name,
+                ticket_id=ticket_id,
+                qr_png=qr_png,
+                email_type="ticket",
+            )
         )

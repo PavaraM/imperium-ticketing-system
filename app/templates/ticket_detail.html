@@ -81,13 +81,23 @@
           <dd>{{ ticket.created_at | local_time(event_tz) }}</dd>
         </div>
         <div class="fact">
-          <dt>Email</dt>
+          <dt>Ticket email</dt>
           <dd>
             <span class="badge badge-email-{{ ticket.email_status.value }}">
               {{ ticket.email_status.value }}
             </span>
           </dd>
         </div>
+        {% if ticket.ticket_type.value == "half" %}
+          <div class="fact">
+            <dt>Reservation email</dt>
+            <dd>
+              <span class="badge badge-email-{{ ticket.reservation_email_status.value if ticket.reservation_email_status else 'pending' }}">
+                {{ ticket.reservation_email_status.value if ticket.reservation_email_status else "not sent" }}
+              </span>
+            </dd>
+          </div>
+        {% endif %}
         {% if ticket.checked_in_at %}
           <div class="fact">
             <dt>Admitted</dt>
@@ -112,7 +122,13 @@
         {% endif %}
       </p>
       <form method="post" action="/tickets/{{ ticket.id }}/resend">
-        <button type="submit" class="button button-quiet">Resend email</button>
+        <button type="submit" class="button button-quiet">
+          {% if ticket.ticket_type.value == "half" and not ticket.balance_paid_at %}
+            Resend reservation email
+          {% else %}
+            Resend ticket email
+          {% endif %}
+        </button>
       </form>
       {% if user.role.value == "admin" and ticket.status.value == "valid" %}
         {% if ticket.ticket_type.value == "half" and not ticket.balance_paid_at %}
