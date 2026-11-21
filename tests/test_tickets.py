@@ -108,7 +108,7 @@ def test_amount_rejects_nonzero_precision_beyond_cents(admin_client, app):
     response = create(admin_client, amount="1.999")
 
     assert response.status_code == 400
-    assert "Amount paid:" in response.text
+    assert "Ticket price:" in response.text
     assert "no more than two decimal places" in response.text
     assert stored(app) == []
 

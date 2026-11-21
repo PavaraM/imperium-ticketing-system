@@ -87,10 +87,18 @@ def test_balance_payment_is_admin_only(admin_client, anon_client, session, app, 
         admin_client, session, ticket_type="half", amount="2000", reference="HALF-0004"
     )
     path = f"/tickets/{ticket.id}/balance"
-    anonymous = anon_client.post(path, data={"bank_reference": "BALANCE-0004"})
+    anonymous = anon_client.post(
+        path, data={"bank_reference": "BALANCE-0004"}, follow_redirects=False
+    )
     assert anonymous.status_code == 303
     assert anonymous.headers["location"].startswith("/login")
 
+    created = admin_client.post(
+        "/admin/users",
+        data={"username": TICKETER_USERNAME, "password": TICKETER_PASSWORD},
+        follow_redirects=False,
+    )
+    assert created.status_code == 303
     admin_client.post("/logout", follow_redirects=False)
     assert login(admin_client, TICKETER_USERNAME, TICKETER_PASSWORD).status_code == 303
     assert (
