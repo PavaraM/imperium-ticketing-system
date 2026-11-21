@@ -29,8 +29,10 @@ def test_reservation_email_confirms_seat_without_qr(settings):
     assert "not an entry ticket" in body
     assert "Remaining balance: LKR 750.00" in body
     assert "Pay by: 05 Dec 2026, 19:00 +0530" in body
+    assert "IMPORTANT: NO REFUNDS" in body
     assert "All payments are non-refundable." in body
-    assert "<strong>All payments are non-refundable.</strong>" in html
+    assert "<strong>IMPORTANT: NO REFUNDS</strong>" in html
+    assert "background:#fff1ee" in html
     assert len(message.get_payload()) == 2
     assert all(part.get_content_type() != "image/png" for part in message.walk())
 
@@ -56,8 +58,10 @@ def test_message_carries_event_details(settings):
     assert "Test Guest" in body
     assert "2026-12-31" in body
     assert "Town Hall" in body
+    assert "IMPORTANT: NO REFUNDS" in body
     assert "All payments are non-refundable." in body
-    assert "<strong>All payments are non-refundable.</strong>" in html
+    assert "<strong>IMPORTANT: NO REFUNDS</strong>" in html
+    assert "background:#fff1ee" in html
 
 
 def test_half_ticket_email_explains_reservation_and_balance_deadline(settings):
@@ -77,8 +81,10 @@ def test_half_ticket_email_explains_reservation_and_balance_deadline(settings):
     assert "reserves your place only and does not grant entry" in body
     assert "LKR 750.00" in body
     assert "by 05 Dec 2026, 19:00 +0530" in body
+    assert "IMPORTANT: NO REFUNDS" in body
     assert "All payments are non-refundable." in body
-    assert "<strong>All payments are non-refundable.</strong>" in html
+    assert "<strong>IMPORTANT: NO REFUNDS</strong>" in html
+    assert "background:#fff1ee" in html
 
 
 def test_html_message_is_responsive_and_escapes_dynamic_content(settings):
